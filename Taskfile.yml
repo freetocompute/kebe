@@ -1,0 +1,24 @@
+version: '3'
+
+dotenv: [ '.env' ]
+
+tasks:
+  build-push-redeploy:
+    desc: Build and push the Docker images to the Kubernetes cluster, restart the deployments
+    cmds:
+      - task: build-push-redeploy-store
+      - task: build-push-redeploy-login
+      - task: build-push-redeploy-dashboard
+  build-push-redeploy-store:
+    cmds:
+      - docker build -t ${DOCKER_REGISTRY}/kebe-store:latest -f build-aux/docker/Dockerfile.store .
+      - docker push ${DOCKER_REGISTRY}/kebe-store:latest
+      - kubectl rollout restart deployment kebe-store
+  build-push-redeploy-login:
+    cmds:
+      - docker build -t ${DOCKER_REGISTRY}/kebe-login:latest -f build-aux/docker/Dockerfile.login .
+      - docker push ${DOCKER_REGISTRY}/kebe-login:latest
+  build-push-redeploy-dashboard:
+    cmds:
+      - docker build -t ${DOCKER_REGISTRY}/kebe-dashboard:latest -f build-aux/docker/Dockerfile.dashboard .
+      - docker push ${DOCKER_REGISTRY}/kebe-dashboard:latest

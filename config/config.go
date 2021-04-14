@@ -1,0 +1,54 @@
+package config
+
+import (
+	"github.com/freetocompute/kebe/config/configkey"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"strings"
+	"sync"
+)
+
+var loadConfigMutex sync.Mutex
+var configLoaded bool
+
+var DefaultValues = map[string]interface{}{
+	configkey.CanonicalSnapStoreURL: "https://api.snapcraft.io",
+	configkey.DebugMode:             true,
+	configkey.LogLevel:              "trace",
+	configkey.MinioHost:             "localhost",
+	configkey.MinioSecretKey:        "password",
+	configkey.MinioAccessKey:        "user",
+	configkey.DatabaseUsername:      "manager",
+	configkey.DatabaseDatabase:      "store",
+	configkey.DatabaseHost:          "localhost",
+	configkey.DatabasePort:          5432,
+	configkey.DatabaseSSLMode:       "disable",
+	configkey.DatabaseTimezone:      "America/New_York",
+	configkey.DatabasePassword:      "password",
+}
+
+func LoadConfig() {
+	loadConfigMutex.Lock()
+	defer loadConfigMutex.Unlock()
+	if !configLoaded {
+		configLoaded = true
+
+		viper.SetConfigName("config")
+		viper.SetConfigType("yaml")
+		viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
+
+		// set defaults first
+		for key, val := range DefaultValues {
+			viper.SetDefault(key, val)
+		}
+
+		viper.SetEnvPrefix("kebe")
+		viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+		viper.AutomaticEnv()
+
+		err := viper.ReadInConfig() // Find and read the config file
+		if err != nil {             // Handle errors reading the config file
+			logrus.Warn("Config file not found, using defaults")
+		}
+	}
+}
