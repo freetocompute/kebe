@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"os"
 	"strings"
 	"sync"
 )
@@ -25,6 +27,8 @@ var DefaultValues = map[string]interface{}{
 	configkey.DatabaseSSLMode:       "disable",
 	configkey.DatabaseTimezone:      "America/New_York",
 	configkey.DatabasePassword:      "password",
+	configkey.LoginPort: 8890,
+	configkey.DashboardPort: 8891,
 }
 
 func LoadConfig() {
@@ -36,6 +40,9 @@ func LoadConfig() {
 		viper.SetConfigName("config")
 		viper.SetConfigType("yaml")
 		viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
+
+		otherPath := os.Getenv("CONFIG_FILE_PATH")
+		viper.AddConfigPath(otherPath)
 
 		// set defaults first
 		for key, val := range DefaultValues {
@@ -51,4 +58,13 @@ func LoadConfig() {
 			logrus.Warn("Config file not found, using defaults")
 		}
 	}
+}
+
+func MustGetString(key string) string{
+	val := viper.GetString(key)
+	if len(val) == 0 {
+		panic(errors.New("failed to get " + key))
+	}
+
+	return val
 }

@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Login" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="kebe-store" />
+    <working_directory value="$PROJECT_DIR$" />
+    <envs>
+      <env name="CONFIG_FILE_PATH" value="$PROJECT_DIR$" />
+      <env name="KEBE_DATABASE_HOST" value="dragon.base127.net" />
+      <env name="KEBE_DATABASE_PORT" value="30032" />
+      <env name="KEBE_MINIO_HOST" value="dragon.base127.net:30900" />
+    </envs>
+    <kind value="FILE" />
+    <package value="github.com/freetocompute/kebe" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$/bin/login/main.go" />
+    <method v="2" />
+  </configuration>
+</component>
