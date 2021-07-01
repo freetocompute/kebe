@@ -41,7 +41,6 @@ func (s *Server) Run() {
 	})
 
 	db, _ := database.CreateDatabase()
-	database.MigrateDatabase(db)
 
 	store := store.NewStore(db)
 	store.SetupEndpoints(r)
