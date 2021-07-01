@@ -19,7 +19,7 @@ You can also use `go run bin/admin/main.go store --help` for more details.
 
 If you've previously initialized your store, you will need to use `destroy` before you can do it again.
 
-Once you've done that you can browse to your assertions http://<your ip>:<port>/minio/root. These
+Once you've done that you can browse to your assertions http://cluster-address:30900/minio/root. These
 will be used in your patched snapd.
 
 # Development
