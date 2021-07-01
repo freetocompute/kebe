@@ -127,6 +127,17 @@ var Initialize = cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Create root key
 		minioClient := getMinioClient()
+
+		exists, err := minioClient.BucketExists(context.Background(), "root")
+		if err != nil {
+			panic(err)
+		}
+
+		if exists {
+			fmt.Println("Bucket exists, please use destroy command if you are sure you want to start over.")
+			return
+		}
+
 		storeRootPrivateKey := createRootKey(minioClient)
 
 		// create a signing database with the store's root key
@@ -137,6 +148,11 @@ var Initialize = cobra.Command{
 
 		// generate generic account, account-key and mode
 		createGenericAccount(minioClient, storeRootPrivateKey, signingDB)
+
+		fmt.Println("*******************************")
+		fmt.Printf("ALL DONE. Browse to %s/%s to view your assertions.\n", viper.GetString(configkey.MinioHost), "minio/root/")
+		fmt.Println("*******************************")
+
 	},
 }
 
@@ -194,7 +210,6 @@ func createGenericClassModelAssertion(signingDB *assertstest.SigningDB, keyId st
 		"classic":      "true",
 	}
 
-	fmt.Printf("Sign generic model assertion with keyId: %s\n", keyId)
 	a, err := signingDB.Sign(asserts.ModelType, modelHeaders, nil, keyId)
 
 	if err != nil {

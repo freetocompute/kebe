@@ -29,14 +29,14 @@ func init() {
 	_ = Add.MarkFlagRequired("type")
 
 	Snaps.AddCommand(Upload)
-	Upload.Flags().StringVarP(&snapPath, "snapPath", "s", "", "Path of snap to add")
-	Upload.Flags().StringVarP(&snapId, "snapId", "i", "", "The id of the snap to add")
-	Upload.Flags().StringVarP(&assertionPath, "assertionPath", "a", "", "The path to the snap-build assertion")
-	Upload.Flags().StringVarP(&storeHost, "store-host", "s", "http://localhost:8080", "The host name of the store with port and protocol scheme (ex. http://localhost:8080)")
+	Upload.Flags().StringVarP(&snapPath, "snap-path", "s", "", "Path of snap to add")
+	Upload.Flags().StringVarP(&snapId, "snap-id", "i", "", "The id of the snap to add")
+	Upload.Flags().StringVarP(&assertionPath, "assertion-path", "a", "", "The path to the snap-build assertion")
+	Upload.Flags().StringVarP(&storeHost, "store-host", "h", "http://localhost:8080", "The host name of the store with port and protocol scheme (ex. http://localhost:8080)")
 
-	_ = Upload.MarkFlagRequired("snapPath")
-	_ = Upload.MarkFlagRequired("snapId")
-	_ = Upload.MarkFlagRequired("assertionPath")
+	_ = Upload.MarkFlagRequired("snap-path")
+	_ = Upload.MarkFlagRequired("snap-id")
+	_ = Upload.MarkFlagRequired("assertion-path")
 }
 
 var Snaps = &cobra.Command{

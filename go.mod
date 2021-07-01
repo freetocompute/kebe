@@ -25,5 +25,3 @@ require (
 	gorm.io/driver/postgres v1.1.0
 	gorm.io/gorm v1.21.10
 )
-
-replace github.com/freetocompute/kebe => ./
