@@ -19,4 +19,6 @@ type Account struct {
 	Username    string `gorm:"unique"`
 	Keys        []Key
 	SnapEntries []SnapEntry
+	Email 			 string
+	Password		 string
 }

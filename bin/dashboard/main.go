@@ -12,5 +12,6 @@ func init() {
 
 func main() {
 	s := &server.Server{}
+	s.Init()
 	s.Run()
 }

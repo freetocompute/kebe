@@ -20,4 +20,17 @@ const (
 	LoginPort     = "login.port"
 
 	StoreAPIURL = "store.api.url"
+
+	OIDCClientId = "oidc.client.id"
+	OIDCClientSecret = "oidc.client.secret"
+	OIDCProviderURL = "oidc.provider.url"
+
+	MacaroonDischargeKey = "macaroon.discharge.key"
+	MacaroonRootKey = "macaroon.root.key"
+	MacaroonRootId = "macaroon.root.id"
+	MacaroonRootLocation = "macaroon.root.location"
+	MacaroonThirdPartyCaveatId = "macaroon.thirdparty.caveat.id"
+	MacaroonThirdPartyLocation = "macaroon.thirdparty.location"
+
+	RootAuthority = "root.authority"
 )

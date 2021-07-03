@@ -5,6 +5,7 @@ import (
 	"github.com/freetocompute/kebe/cmd/helper/keys"
 	"github.com/freetocompute/kebe/cmd/helper/rollup"
 	"github.com/freetocompute/kebe/cmd/helper/snaps"
+	"github.com/freetocompute/kebe/cmd/helper/utils"
 	"github.com/freetocompute/kebe/config"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/signtool"
@@ -29,6 +30,7 @@ func init() {
 	Helper.AddCommand(snaps.Snaps)
 	Helper.AddCommand(rollup.Rollup)
 	Helper.AddCommand(keys.Keys)
+	Helper.AddCommand(utils.Utils)
 
 	Helper.AddCommand(sign)
 	sign.Flags().StringVarP(&filePath, "path", "p", "", "Path of the file to sign")

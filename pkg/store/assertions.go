@@ -1,6 +1,8 @@
 package store
 
 import (
+	"github.com/freetocompute/kebe/config"
+	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/models"
 	asserts2 "github.com/freetocompute/kebe/pkg/store/asserts"
@@ -30,7 +32,7 @@ func (s *Store) getSnapRevisionAssertion(c *gin.Context) {
 	db = s.db.Preload(clause.Associations).Where("id", snapRevision.SnapEntryID).Find(&snapEntry)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		writer := c.Writer
-		storeAuthorityId := "kebe-store"
+		storeAuthorityId := config.MustGetString(configkey.RootAuthority)
 		assertion, err := asserts2.MakeSnapRevisionAssertion(storeAuthorityId, sha3384digest, snapEntry.SnapStoreID, uint64(snapRevision.Size), int(snapRevision.ID), snapEntry.Account.AccountId,
 			asserts.RSAPrivateKey(s.rootStoreKey).PublicKey().ID(), s.assertsDatabase)
 
@@ -63,7 +65,8 @@ func (s *Store) getSnapDeclarationAssertion(c *gin.Context) {
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		writer := c.Writer
 
-		aaa, err := asserts2.MakeSnapDeclarationAssertion("kebe-store", snapEntry.Account.AccountId, &snapEntry, asserts.RSAPrivateKey(s.rootStoreKey), s.assertsDatabase)
+		rootAuthorityId := config.MustGetString(configkey.RootAuthority)
+		aaa, err := asserts2.MakeSnapDeclarationAssertion(rootAuthorityId, snapEntry.Account.AccountId, &snapEntry, asserts.RSAPrivateKey(s.rootStoreKey), s.assertsDatabase)
 		if err != nil {
 			logrus.Error(err)
 			c.AbortWithStatus(http.StatusBadRequest)

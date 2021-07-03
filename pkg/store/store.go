@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"github.com/freetocompute/kebe/config"
+	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/models"
@@ -44,7 +46,8 @@ func NewStore(db *gorm.DB) *Store {
 		return nil
 	}
 
-	signingDB := assertstest.NewSigningDB("kebe-store", asserts.RSAPrivateKey(rootPrivateKey))
+	rootAuthorityId := config.MustGetString(configkey.RootAuthority)
+	signingDB := assertstest.NewSigningDB(rootAuthorityId, asserts.RSAPrivateKey(rootPrivateKey))
 
 	return &Store{
 		db:              db,
