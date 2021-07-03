@@ -4,7 +4,6 @@ import (
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/kebe"
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/store"
 	"github.com/gin-gonic/gin"
@@ -44,9 +43,6 @@ func (s *Server) Run() {
 
 	store := store.NewStore(db)
 	store.SetupEndpoints(r)
-
-	kebe := kebe.NewKebe(db)
-	kebe.SetupEndpoints(r)
 
 	_ = r.Run()
 }
