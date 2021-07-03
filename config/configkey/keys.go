@@ -31,4 +31,6 @@ const (
 	MacaroonRootLocation = "macaroon.root.location"
 	MacaroonThirdPartyCaveatId = "macaroon.thirdparty.caveat.id"
 	MacaroonThirdPartyLocation = "macaroon.thirdparty.location"
+
+	RootAuthority = "root.authority"
 )
