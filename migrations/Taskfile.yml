@@ -1,0 +1,21 @@
+version: '3'
+
+dotenv: [ '../.env' ]
+
+tasks:
+  up:
+    desc: Run all the migrations on the database, bring it to the most current migration
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . up 
+ 
+  add-migration:
+    desc: Add a migration with the name provided
+    cmds:
+      - go-migrate -database ${DATABASE_URL} create -ext sql -dir . {{.CLI_ARGS}}
+
+  step-up-one:
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . up 1
+  step-down-one:
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . down 1
