@@ -2,9 +2,6 @@ package admin
 
 import (
 	"fmt"
-	"github.com/freetocompute/kebe/cmd/admin/accounts"
-	"github.com/freetocompute/kebe/cmd/admin/keys"
-	"github.com/freetocompute/kebe/cmd/admin/snaps"
 	"github.com/freetocompute/kebe/cmd/store"
 	"github.com/freetocompute/kebe/config"
 	"github.com/olekukonko/tablewriter"
@@ -17,10 +14,6 @@ import (
 
 func init() {
 	Admin.AddCommand(store.Store)
-	Admin.AddCommand(accounts.Accounts)
-	Admin.AddCommand(snaps.Snaps)
-	Admin.AddCommand(keys.Keys)
-	Admin.AddCommand(info)
 }
 
 var Admin = &cobra.Command{
