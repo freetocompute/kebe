@@ -13,6 +13,7 @@ import (
 	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/freetocompute/kebe/pkg/store/responses"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
@@ -21,7 +22,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 )
@@ -75,6 +78,42 @@ func (s *Store) snapDownload(c *gin.Context) {
 	c.Writer.Write(*bytes)
 }
 
+func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry){
+	var snapEntry models.SnapEntry
+	db := s.db.Where("name", snapName).Preload(clause.Associations).Find(&snapEntry)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		channelParts := strings.Split(channel, "/")
+		var track string
+		var risk string
+		if len(channelParts) == 1 {
+			if channelParts[0] == "beta" || channelParts[0] == "edge" || channelParts[0] == "stable" || channelParts[0] == "candidate" {
+				track = "latest"
+				risk = channelParts[0]
+			} else {
+				track = channelParts[0]
+				risk = "stable"
+			}
+		} else if len(channelParts) == 2 {
+			track = channelParts[0]
+			risk = channelParts[1]
+		} else {
+			return nil, nil
+		}
+		var snapTrack models.SnapTrack
+		var snapRisk models.SnapRisk
+		//var snapRevision models.SnapRevision
+		db := s.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: track}).Find(&snapTrack)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			db := s.db.Preload(clause.Associations).Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: risk, SnapTrackID: snapTrack.ID}).Find(&snapRisk)
+			if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+				return &snapRisk.Revision, &snapEntry
+			}
+		}
+	}
+
+	return nil, nil
+}
+
 func (s *Store) snapRefresh(c *gin.Context) {
 	request := c.Request
 	writer := c.Writer
@@ -95,71 +134,65 @@ func (s *Store) snapRefresh(c *gin.Context) {
 		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 			if action.Action == "download" {
 				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-				var snapEntry models.SnapEntry
-				db := s.db.Where("name", action.Name).Preload(clause.Associations).Find(&snapEntry)
-				if db.Error != nil {
-					logrus.Error(db.Error)
-					c.AbortWithStatus(http.StatusBadRequest)
+
+				snapRevision, _ := s.getRevision(action.Channel, action.Name)
+				if snapRevision != nil {
+					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
+					if err != nil {
+						logrus.Error(err)
+						c.AbortWithStatus(http.StatusBadRequest)
+						return
+					}
+					//
+					actionResult := responses.SnapActionResult{
+						Result:      "download",
+						InstanceKey: "download-1",
+						SnapID:      snapEntry.SnapStoreID,
+						Name:        snapEntry.Name,
+						Snap:        storeSnap,
+					}
+					actionResultList := responses.SnapActionResultList{
+						Results: []*responses.SnapActionResult{
+							&actionResult,
+						},
+						ErrorList: nil,
+					}
+
+					c.JSON(http.StatusOK, &actionResultList)
 					return
 				}
-				//
-				latestRevision := snapEntry.GetLatestRevision()
-
-				storeSnap, err := snapEntry.ToStoreSnap(latestRevision.SnapFilename, 0, "")
-				if err != nil {
-					logrus.Error(err)
-					c.AbortWithStatus(http.StatusBadRequest)
-					return
-				}
-				//
-				actionResult := responses.SnapActionResult{
-					Result:      "download",
-					InstanceKey: "download-1",
-					SnapID:      snapEntry.SnapStoreID,
-					Name:        snapEntry.Name,
-					Snap:        storeSnap,
-				}
-				actionResultList := responses.SnapActionResultList{
-					Results: []*responses.SnapActionResult{
-						&actionResult,
-					},
-					ErrorList: nil,
-				}
-
-				c.JSON(http.StatusOK, &actionResultList)
-				return
-
 			} else if action.Action == "install" {
 				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
 
-				latestRevision := snapEntry.GetLatestRevision()
+				snapRevision, _ := s.getRevision(action.Channel, action.Name)
+				if snapRevision != nil {
+					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
+					if err != nil {
+						logrus.Error(err)
+						c.AbortWithStatus(http.StatusBadRequest)
+						return
+					}
 
-				storeSnap, err := snapEntry.ToStoreSnap(latestRevision.SnapFilename, 0, "")
-				if err != nil {
-					logrus.Error(err)
-					c.AbortWithStatus(http.StatusBadRequest)
+					storeSnap.Architectures = []string{"amd64"}
+					storeSnap.Confinement = snapEntry.Confinement
+
+					actionResult := responses.SnapActionResult{
+						Result:      "install",
+						InstanceKey: "install-1",
+						SnapID:      snapEntry.SnapStoreID,
+						Name:        snapEntry.Name,
+						Snap:        storeSnap,
+					}
+					actionResultList := responses.SnapActionResultList{
+						Results: []*responses.SnapActionResult{
+							&actionResult,
+						},
+						ErrorList: nil,
+					}
+
+					c.JSON(http.StatusOK, &actionResultList)
 					return
 				}
-
-				storeSnap.Architectures = []string{"amd64"}
-				storeSnap.Confinement = snapEntry.Confinement
-
-				actionResult := responses.SnapActionResult{
-					Result:      "install",
-					InstanceKey: "install-1",
-					SnapID:      snapEntry.SnapStoreID,
-					Name:        snapEntry.Name,
-					Snap:        storeSnap,
-				}
-				actionResultList := responses.SnapActionResultList{
-					Results: []*responses.SnapActionResult{
-						&actionResult,
-					},
-					ErrorList: nil,
-				}
-
-				c.JSON(http.StatusOK, &actionResultList)
-				return
 			}
 		}
 	}
@@ -187,13 +220,19 @@ func (s *Store) getSnapSections(c *gin.Context) {
 }
 
 func (s *Store) findSnap(c *gin.Context) {
-	var snaps []models.SnapEntry
+	var snapEntry models.SnapEntry
 
-	s.db.Preload("Snap.Revisions").Find(&snaps)
+	searchResult := responses.SearchV2Results{
+		ErrorList: nil,
+	}
 
-	results := func() []responses.StoreSearchResult {
-		var results []responses.StoreSearchResult
-		for _, snapEntry := range snaps {
+	// TODO: implement query parameters
+	// q : search term, assume name right now
+	name := c.Query("q")
+	db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		results := func() []responses.StoreSearchResult {
+			var results []responses.StoreSearchResult
 
 			var snapType snap.Type
 			if snapEntry.Type == "app" {
@@ -202,16 +241,16 @@ func (s *Store) findSnap(c *gin.Context) {
 				snapType = snap.TypeOS
 			}
 
-			//
-			storeSearchResult := responses.StoreSearchResult{
+			results = append(results, responses.StoreSearchResult{
 				Revision: responses.StoreSearchChannelSnap{
 					StoreSnap: responses.StoreSnap{
 						Confinement: snapEntry.Confinement,
-						CreatedAt: snapEntry.CreatedAt.String(),
-						Name: snapEntry.Name,
-						Revision: int(snapEntry.LatestRevisionID),
-						SnapID:   snapEntry.SnapStoreID,
+						CreatedAt:   snapEntry.CreatedAt.String(),
+						Name:        snapEntry.Name,
+						Revision:    int(snapEntry.LatestRevisionID),
+						SnapID:      snapEntry.SnapStoreID,
 						Type: snapType,
+						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },
 					},
 				},
 				Snap: responses.StoreSnap{
@@ -221,20 +260,16 @@ func (s *Store) findSnap(c *gin.Context) {
 					Revision: int(snapEntry.LatestRevisionID),
 					SnapID:   snapEntry.SnapStoreID,
 					Type: snapType,
+					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },
 				},
-				Name:   snapEntry.Name,
-				SnapID: snapEntry.SnapStoreID,
-			}
+				Name:     snapEntry.Name,
+				SnapID:   snapEntry.SnapStoreID,
+			})
 
-			results = append(results, storeSearchResult)
-		}
+			return results
+		}()
 
-		return results
-	}()
-
-	searchResult := responses.SearchV2Results{
-		Results:   results,
-		ErrorList: nil,
+		searchResult.Results = results
 	}
 
 	logrus.Infof("%+v", searchResult)
@@ -262,6 +297,50 @@ func (s *Store) getSnapNames(c *gin.Context) {
 	}
 
 	writer.Write(bytes)
+}
+
+func (s *Store) saveFileToTemp(c *gin.Context, snapFile *multipart.FileHeader) (string, string) {
+	// Generate random file name for the new uploaded file so it doesn't override the old file with same name
+	snapFileId := uuid.New().String()
+	newFileName :=  snapFileId + ".snap"
+
+	// The file is received, so let's save it
+	if err := c.SaveUploadedFile(snapFile, "/tmp/"+newFileName); err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"message": "Unable to save the file",
+		})
+		return "", ""
+	}
+
+	return newFileName, snapFileId
+}
+
+func (s *Store) unscannedUpload(c *gin.Context) {
+	snapFileData, err := c.FormFile("binary")
+
+	// TODO: fix the actual error response to be something expected
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": "No snap file is received",
+		})
+		return
+	}
+
+	snapFileName, id := s.saveFileToTemp(c, snapFileData)
+
+	// TODO: create an "unscanned upload" table, store info about the upload there (like sha3-384 and base64 encoded values)
+
+	// TODO: create "unscanned" bucket if it doesn't exist
+	objStore := objectstore.NewObjectStore()
+	err = objStore.SaveFileToBucket("unscanned", path.Join("/", "tmp", snapFileName))
+	if err != nil {
+		logrus.Error(err)
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+	}
+
+	c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
 }
 
 func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {

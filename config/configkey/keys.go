@@ -16,6 +16,10 @@ const (
 	DatabaseTimezone = "database.timezone"
 	DatabasePassword = "database.password"
 
+	DashboardURL = "dashboard.url"
+	StoreURL = "store.url"
+	LoginURL = "login.url"
+
 	DashboardPort = "dashboard.port"
 	LoginPort     = "login.port"
 

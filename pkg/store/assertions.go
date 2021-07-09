@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/base64"
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
@@ -17,15 +18,16 @@ import (
 func (s *Store) getSnapRevisionAssertion(c *gin.Context) {
 	sha3384digest := c.Param("sha3384digest")
 	logrus.Tracef("Requested snap-revision: %s", sha3384digest)
-	//
+
 	var snapRevision models.SnapRevision
-	db := s.db.Where("sha3_384", sha3384digest).Find(&snapRevision)
+	db := s.db.Where(&models.SnapRevision{SHA3384Encoded: sha3384digest}).Find(&snapRevision)
 	if db.Error != nil {
 		logrus.Error(db.Error)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	} else if db.RowsAffected == 0 {
 		c.AbortWithStatus(http.StatusNotFound)
+		return
 	}
 
 	var snapEntry models.SnapEntry
@@ -123,7 +125,12 @@ func (s *Store) getAccountKey(c *gin.Context) {
 		if db.RowsAffected == 1 {
 			logrus.Infof("Found account-key: %+v", accountKey)
 
-			pbk, err := asserts.DecodePublicKey([]byte(accountKey.EncodedPublicKey))
+			bytes, err := base64.StdEncoding.DecodeString(accountKey.EncodedPublicKey)
+			if err != nil {
+				panic(err)
+			}
+
+			pbk, err := asserts.DecodePublicKey([]byte(bytes))
 			if err != nil {
 				panic(err)
 			}

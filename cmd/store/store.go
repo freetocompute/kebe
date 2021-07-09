@@ -18,8 +18,8 @@ var databaseDatabaseVar string
 func init() {
 	Store.AddCommand(&Initialize)
 	Store.Flags().StringVarP(&minioHostVar, "minio-host", "m", "", "The MinIO host, like minio.awesome.com:30900")
-	Store.Flags().StringVarP(&minioAccessKeyVar, "minio-access-key", "a", "", "The MinIO host, like minio.awesome.com:30900")
-	Store.Flags().StringVarP(&minioSecretKeyVar, "minio-secret-key", "k", "", "The MinIO host, like minio.awesome.com:30900")
+	Store.Flags().StringVarP(&minioAccessKeyVar, "minio-access-key", "a", "", "The MinIO access key")
+	Store.Flags().StringVarP(&minioSecretKeyVar, "minio-secret-key", "k", "", "The MinIO secrety key")
 	Store.Flags().StringVarP(&databaseHostVar, "db-host", "s", "", "The database host, like db.awesome.com")
 	Store.Flags().IntVarP(&databasePortVar, "db-port", "p", 0, "The database port, like 30032")
 	Store.Flags().StringVarP(&databasePasswordVar, "db-password", "x", "", "The database password")

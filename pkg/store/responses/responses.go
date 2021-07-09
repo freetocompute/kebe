@@ -129,3 +129,12 @@ type SnapActionResult struct {
 	AssertionStreamURLs []string         `json:"assertion-stream-urls"`
 	ErrorList           []ErrorListEntry `json:"error-list"`
 }
+
+type Unscanned struct {
+	UploadId string `json:"upload_id"`
+}
+
+type Upload struct {
+	Success bool
+	StatusDetailsURL string `json:"status_details_url"`
+}

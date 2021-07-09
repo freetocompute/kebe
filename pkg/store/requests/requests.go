@@ -55,3 +55,22 @@ type AssertAtJSON struct {
 	PrimaryKey  []string `json:"primary-key"`
 	IfNewerThan *int     `json:"if-newer-than,omitempty"`
 }
+
+type SnapPush struct {
+	Name string
+	DryRun bool `json:"dry_run"`
+	UpDownId string `json:"updown_id"`
+	Series string
+	BinaryFileSize int64 `json:"binary_filesize"`
+	SourceUploaded bool `json:"source_uploaded"`
+	DeltaFormat string `json:"delta_format"`
+	DeltaHash string `json:"delta_hash"`
+	SourceHash string `json:"source_hash"`
+	TargetHash string `json:"target_hash"`
+}
+
+type SnapRelease struct {
+	Name string
+	Revision string
+	Channels []string
+}

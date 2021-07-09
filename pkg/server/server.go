@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/middleware"
+	"github.com/freetocompute/kebe/pkg/objectstore"
 	"github.com/freetocompute/kebe/pkg/store"
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -42,7 +45,25 @@ func (s *Server) Run() {
 	db, _ := database.CreateDatabase()
 
 	store := store.NewStore(db)
+	if store == nil {
+		panic("store was not created, cannot continue")
+	}
 	store.SetupEndpoints(r)
+
+	// Make sure all the necessary buckets exists
+	err := objectstore.GetMinioClient().MakeBucket(context.Background(), "snaps", minio.MakeBucketOptions{})
+	if err != nil {
+		if _, ok := err.(minio.ErrorResponse); !ok {
+			panic(err)
+		}
+	}
+
+	err = objectstore.GetMinioClient().MakeBucket(context.Background(), "unscanned", minio.MakeBucketOptions{})
+	if err != nil {
+		if _, ok := err.(minio.ErrorResponse); !ok {
+			panic(err)
+		}
+	}
 
 	_ = r.Run()
 }

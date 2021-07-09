@@ -58,6 +58,7 @@ func CheckForAuthorizedUserWithMacaroons(db *gorm.DB, rootKey string) gin.Handle
 					if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 						c.Set("account", &userAccount)
 						c.Next()
+						return
 					}
 				}
 			}

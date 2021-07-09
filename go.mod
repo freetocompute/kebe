@@ -3,6 +3,7 @@ module github.com/freetocompute/kebe
 go 1.16
 
 require (
+	github.com/a-h/generate v0.0.0-20190312091541-e59c34d33fb3 // indirect
 	github.com/coreos/go-oidc/v3 v3.0.0
 	github.com/frankban/quicktest v1.11.3 // indirect
 	github.com/gin-gonic/gin v1.7.1

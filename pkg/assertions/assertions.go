@@ -12,3 +12,12 @@ func EncodeAssertionToFile(assertionPath string, assertion asserts.Assertion) {
 		panic(err)
 	}
 }
+
+func GetPublicKeyFromBody(bodyBytes []byte) (asserts.PublicKey, error){
+	pubkey, err := asserts.DecodePublicKey(bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return pubkey, nil
+}
