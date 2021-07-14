@@ -22,6 +22,8 @@ const (
 
 	DashboardPort = "dashboard.port"
 	LoginPort     = "login.port"
+	AdminDPort = "admind.port"
+	AdminDURL = "admind.url"
 
 	StoreAPIURL = "store.api.url"
 
@@ -37,4 +39,6 @@ const (
 	MacaroonThirdPartyLocation = "macaroon.thirdparty.location"
 
 	RootAuthority = "root.authority"
+
+	AdminCLILoginPort = "admin.login.port"
 )

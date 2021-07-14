@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/freetocompute/kebe/cmd/admin"
-	adminConfig "github.com/freetocompute/kebe/cmd/admin/config"
 	"github.com/freetocompute/kebe/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -11,11 +10,6 @@ import (
 )
 
 func init() {
-	// combine defaults
-	for k, v := range adminConfig.DefaultValues {
-		config.DefaultValues[k] = v
-	}
-
 	cobra.OnInitialize(config.LoadConfig)
 }
 

@@ -68,3 +68,11 @@ func MustGetString(key string) string{
 
 	return val
 }
+
+func MustGetInt32(key string) int32 {
+	if viper.IsSet(key) {
+		val := viper.GetInt32(key)
+		return val
+	}
+	panic("key not found: " + key)
+}

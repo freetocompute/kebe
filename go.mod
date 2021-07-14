@@ -3,9 +3,9 @@ module github.com/freetocompute/kebe
 go 1.16
 
 require (
-	github.com/a-h/generate v0.0.0-20190312091541-e59c34d33fb3 // indirect
 	github.com/coreos/go-oidc/v3 v3.0.0
 	github.com/frankban/quicktest v1.11.3 // indirect
+	github.com/gin-contrib/static v0.0.1
 	github.com/gin-gonic/gin v1.7.1
 	github.com/go-resty/resty/v2 v2.6.0
 	github.com/godbus/dbus v4.1.0+incompatible // indirect
@@ -22,7 +22,6 @@ require (
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0 // indirect
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sys v0.0.0-20210412220455-f1c623a9e750 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect

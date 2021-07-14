@@ -14,6 +14,9 @@ import (
 
 func init() {
 	Admin.AddCommand(store.Store)
+	Admin.AddCommand(info)
+	Admin.AddCommand(login)
+	Admin.AddCommand(account)
 }
 
 var Admin = &cobra.Command{
@@ -54,6 +57,5 @@ var info = &cobra.Command{
 			table.Append([]string{k, fmt.Sprintf("%+v", viper.Get(k))})
 		}
 		table.Render()
-
 	},
 }
