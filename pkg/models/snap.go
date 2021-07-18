@@ -54,23 +54,12 @@ type SnapEntry struct {
 	gorm.Model
 	Name        string `json:"name"`
 	SnapStoreID string `json:"snap-id"`
-	LatestRevisionID uint
 	Revisions        []SnapRevision
 	Type             string
 	Confinement      string
 
 	AccountID uint
 	Account   Account
-}
-
-func (se *SnapEntry) GetLatestRevision() *SnapRevision {
-	for _, r := range se.Revisions {
-		if r.ID == se.LatestRevisionID {
-			return &r
-		}
-	}
-
-	return nil
 }
 
 type SnapRevision struct {

@@ -247,7 +247,8 @@ func (s *Store) findSnap(c *gin.Context) {
 						Confinement: snapEntry.Confinement,
 						CreatedAt:   snapEntry.CreatedAt.String(),
 						Name:        snapEntry.Name,
-						Revision:    int(snapEntry.LatestRevisionID),
+						// TODO: need to fix this properly
+						Revision:    1,
 						SnapID:      snapEntry.SnapStoreID,
 						Type: snapType,
 						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },
@@ -257,7 +258,8 @@ func (s *Store) findSnap(c *gin.Context) {
 					Confinement: snapEntry.Confinement,
 					CreatedAt: snapEntry.CreatedAt.String(),
 					Name: snapEntry.Name,
-					Revision: int(snapEntry.LatestRevisionID),
+					// TODO: need to fix this properly
+					Revision:    1,
 					SnapID:   snapEntry.SnapStoreID,
 					Type: snapType,
 					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },

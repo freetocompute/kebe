@@ -144,6 +144,32 @@ func GetAccount(c *gin.Context) *models.Account {
 	return nil
 }
 
+func AddRisks(db *gorm.DB, snapEntryId uint, trackId uint) {
+	// TODO: fix me
+	risks := []string{ "stable", "candidate", "beta", "edge" }
+
+	// TODO: fix the need for an empty revision
+	snapRevision := models.SnapRevision{
+		SnapFilename:           "",
+		SnapEntryID:            snapEntryId,
+		SHA3_384:               "",
+		Size:                   0,
+	}
+
+	db.Save(&snapRevision)
+
+	for _, risk := range risks {
+		var snapRisk models.SnapRisk
+		snapRisk.SnapEntryID = snapEntryId
+		snapRisk.SnapTrackID = trackId
+		snapRisk.Name = risk
+
+		snapRisk.RevisionID = snapRevision.ID
+
+		db.Save(&snapRisk)
+	}
+}
+
 func (s *Server) registerSnapName(c *gin.Context) {
 	var registerSnapName dashboardRequests.RegisterSnapName
 	json.NewDecoder(c.Request.Body).Decode(&registerSnapName)
@@ -173,9 +199,6 @@ func (s *Server) registerSnapName(c *gin.Context) {
 
 			s.db.Save(&newSnapEntry)
 
-                       // TODO: fix me
-			risks := []string{ "stable", "candidate", "beta", "edge" }
-
 			// For now when we register a snap we are going to create the default tracks/risks
 			track := models.SnapTrack{
 				Name:        "latest",
@@ -184,26 +207,7 @@ func (s *Server) registerSnapName(c *gin.Context) {
 
 			s.db.Save(&track)
 
-			// TODO: fix the need for an empty revision
-			snapRevision := models.SnapRevision{
-				SnapFilename:           "",
-				SnapEntryID:            newSnapEntry.ID,
-				SHA3_384:               "",
-				Size:                   0,
-			}
-
-			s.db.Save(&snapRevision)
-
-			for _, risk := range risks {
-				var snapRisk models.SnapRisk
-				snapRisk.SnapEntryID = newSnapEntry.ID
-				snapRisk.SnapTrackID = track.ID
-				snapRisk.Name = risk
-
-				snapRisk.RevisionID = snapRevision.ID
-
-				s.db.Save(&snapRisk)
-			}
+			AddRisks(s.db, newSnapEntry.ID, track.ID)
 
 			c.JSON(200, &dashboardResponses.RegisterSnap{
 				Id:  newSnapEntry.SnapStoreID,

@@ -17,6 +17,7 @@ func init() {
 	Admin.AddCommand(info)
 	Admin.AddCommand(login)
 	Admin.AddCommand(account)
+	Admin.AddCommand(track)
 }
 
 var Admin = &cobra.Command{

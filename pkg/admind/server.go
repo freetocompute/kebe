@@ -7,6 +7,7 @@ import (
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind/requests"
+	"github.com/freetocompute/kebe/pkg/dashboard/server"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/models"
@@ -16,6 +17,7 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
+	"net/http"
 )
 
 type Server struct {
@@ -98,4 +100,29 @@ func (s *Server) verifyUser(accessToken string) (*UserInfo, error) {
 	}
 
 	return nil, errors.New("not found")
+}
+
+func (s *Server) addTrack(c *gin.Context) {
+	var addTrackReq requests.AddTrack
+	json.NewDecoder(c.Request.Body).Decode(&addTrackReq)
+
+	logrus.Tracef("requests.AddTrack: %+v", addTrackReq)
+
+	var snapEntry models.SnapEntry
+	db := s.db.Where(&models.SnapEntry{Name: addTrackReq.SnapName}).Find(&snapEntry)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		track := models.SnapTrack{
+			Name:        addTrackReq.TrackName,
+			SnapEntryID: snapEntry.ID,
+		}
+
+		s.db.Save(&track)
+
+		server.AddRisks(s.db, snapEntry.ID, track.ID)
+
+		c.Status(http.StatusCreated)
+		return
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }

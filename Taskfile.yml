@@ -11,18 +11,22 @@ tasks:
       - task: build-push-dashboard
       - task: build-push-admind
   build-push-store:
+    desc: Build and push
     cmds:
       - docker build -t ${DOCKER_REGISTRY}/kebe/store:latest -f build-aux/docker/Dockerfile.store .
       - docker push ${DOCKER_REGISTRY}/kebe/store:latest
   build-push-login:
+    desc: Build and push
     cmds:
       - docker build -t ${DOCKER_REGISTRY}/kebe/login:latest -f build-aux/docker/Dockerfile.login .
       - docker push ${DOCKER_REGISTRY}/kebe/login:latest
   build-push-dashboard:
+    desc: Build and push
     cmds:
       - docker build -t ${DOCKER_REGISTRY}/kebe/dashboard:latest -f build-aux/docker/Dockerfile.dashboard .
       - docker push ${DOCKER_REGISTRY}/kebe/dashboard:latest
   build-push-admind:
+    desc: Build and push
     cmds:
       - docker build -t ${DOCKER_REGISTRY}/kebe/admind:latest -f build-aux/docker/Dockerfile.admind .
       - docker push ${DOCKER_REGISTRY}/kebe/admind:latest

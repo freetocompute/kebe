@@ -6,3 +6,8 @@ type AddAccount struct {
 	Email string
 	DisplayName string
 }
+
+type AddTrack struct {
+	SnapName string
+	TrackName string
+}
