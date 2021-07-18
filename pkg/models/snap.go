@@ -75,10 +75,7 @@ func (se *SnapEntry) GetLatestRevision() *SnapRevision {
 
 type SnapRevision struct {
 	gorm.Model
-
 	SnapFilename           string
-	BuildAssertionFilename string
-
 	SnapEntryID uint
 	SHA3_384 string
 	SHA3384Encoded string `gorm:"column:sha3_384_encoded"`
@@ -87,11 +84,6 @@ type SnapRevision struct {
 
 func (se *SnapEntry) ToStoreSnap(snapRevision *SnapRevision) (*responses.StoreSnap, error) {
 	downloadURL := fmt.Sprintf(viper.GetString(configkey.StoreAPIURL)+"/download/snaps/%s", snapRevision.SnapFilename)
-
-	//decodedStringBytes, _ := base64.StdEncoding.DecodeString(snapRevision.SHA3_384)
-	//actualSha3 := fmt.Sprintf("%x", decodedStringBytes)
-	//fmt.Printf("%s\n", actualSha3)
-
 	base := snapRevision.SnapFilename
 	obs := objectstore.NewObjectStore()
 	h := crypto.SHA3_384.New()

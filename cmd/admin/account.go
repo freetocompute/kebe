@@ -125,15 +125,23 @@ var add = &cobra.Command{
 		client := resty.New()
 
 		admindURL := config.MustGetString(configkey.AdminDURL)
-		admindPort := config.MustGetInt32(configkey.AdminDPort)
+
+		accountURL := admindURL +  "/v1/admin/account"
 
 		bytes, _ = json.Marshal(&addAccountRequest)
 		resp, err := client.R().
 			SetBody(bytes).
 			SetHeader("Authorization", loginInfo.Token.AccessToken).
-			Post(admindURL + ":" + strconv.Itoa(int(admindPort)) + "/v1/admin/account")
+			Post(accountURL)
+
+		if err != nil {
+			panic(err)
+		}
 
 		if resp.StatusCode() != 200 {
+			if resp.Error() != nil {
+				panic(resp.Error())
+			}
 			panic("there was a problem: " + strconv.Itoa(resp.StatusCode()))
 		}
 	},

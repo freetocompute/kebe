@@ -12,11 +12,15 @@ func (s *Server) SetupEndpoints(r *gin.Engine) {
 
 	public := r.Group("/dev/api")
 	public.POST("/acl/", s.postACL)
+
 	// TODO: document this somehow
 	public.GET("/snap-status/:id", s.getStatus)
 
 	private := r.Group("/dev/api")
 	private.Use(middleware.CheckForAuthorizedUserWithMacaroons(s.db, rootKey))
+
+	public.POST("/acl/verify/", s.verifyACL)
+
 	private.GET("/account", s.getAccount)
 	private.POST("/register-name", s.registerSnapName)
 	private.POST("/account/account-key", s.addAccountKey)

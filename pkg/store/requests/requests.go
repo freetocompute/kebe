@@ -67,6 +67,7 @@ type SnapPush struct {
 	DeltaHash string `json:"delta_hash"`
 	SourceHash string `json:"source_hash"`
 	TargetHash string `json:"target_hash"`
+	Channels []string `json:"channels"`
 }
 
 type SnapRelease struct {

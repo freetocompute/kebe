@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -20,6 +21,7 @@ var DefaultValues = map[string]interface{}{
 	configkey.MinioHost:             "localhost",
 	configkey.MinioSecretKey:        "password",
 	configkey.MinioAccessKey:        "user",
+	configkey.MinioSecure: true,
 	configkey.DatabaseUsername:      "manager",
 	configkey.DatabaseDatabase:      "store",
 	configkey.DatabaseHost:          "localhost",
@@ -37,12 +39,18 @@ func LoadConfig() {
 	if !configLoaded {
 		configLoaded = true
 
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-		viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
+		explicitConfigFile := os.Getenv("CONFIG_FILE")
+		if explicitConfigFile != "" {
+			fmt.Printf("CONFIG_FILE: %s\n", explicitConfigFile)
+			viper.SetConfigFile(explicitConfigFile)
+		} else {
+			viper.SetConfigName("config")
+			viper.SetConfigType("yaml")
+			viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
 
-		otherPath := os.Getenv("CONFIG_FILE_PATH")
-		viper.AddConfigPath(otherPath)
+			otherPath := os.Getenv("CONFIG_FILE_PATH")
+			viper.AddConfigPath(otherPath)
+		}
 
 		// set defaults first
 		for key, val := range DefaultValues {

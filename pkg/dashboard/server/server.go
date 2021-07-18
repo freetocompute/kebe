@@ -20,6 +20,7 @@ import (
 	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/freetocompute/kebe/pkg/objectstore"
 	"github.com/freetocompute/kebe/pkg/sha"
+	"github.com/freetocompute/kebe/pkg/snap"
 	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/freetocompute/kebe/pkg/store/responses"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,7 @@ import (
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -185,7 +187,6 @@ func (s *Server) registerSnapName(c *gin.Context) {
 			// TODO: fix the need for an empty revision
 			snapRevision := models.SnapRevision{
 				SnapFilename:           "",
-				BuildAssertionFilename: "",
 				SnapEntryID:            newSnapEntry.ID,
 				SHA3_384:               "",
 				Size:                   0,
@@ -301,6 +302,11 @@ func (s *Server) pushSnap(c *gin.Context) {
 
 		s.db.Save(&rev)
 
+		// Did it have channels? if so, release it
+		if len(pushSnap.Channels) > 0 {
+			_ = s.releaseSnap(pushSnap.Channels, snap.ID, rev.ID)
+		}
+
 		// File saved successfully. Return proper result
 		// TODO: this URL needs to be serviced by a worker thread
 		c.JSON(http.StatusAccepted, &responses.Upload{
@@ -311,13 +317,12 @@ func (s *Server) pushSnap(c *gin.Context) {
 		return
 	}
 
-	// File saved successfully. Return proper result
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
+// The id here is the up-down id generated from the upload to /unscanned-upload/
 func (s *Server) getStatus(c *gin.Context) {
 	// TODO: Do whatever we need to here and then return that it's processed, some day, (hopefully!) this will need to be async!
-
 	snapId := c.Param("id")
 
 	// We need to move the snap from the unscanned bucket to the snaps bucket
@@ -353,11 +358,67 @@ func (s *Server) getStatus(c *gin.Context) {
 
 	s.db.Save(&rev)
 
+	snapMeta, err2 := snap.GetSnapMetaFromBytes(bytes, "/tmp")
+	if err2 == nil {
+		logrus.Tracef("snapMeta: %+v", snapMeta)
+		var snapEntry models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: snapMeta.Name}).Find(&snapEntry)
+		if _, ok :=database.CheckDBForErrorOrNoRows(db); ok {
+			snapEntry.Type = snapMeta.Type
+			snapEntry.Confinement = snapMeta.Confinement
+			s.db.Save(&snapEntry)
+		} else {
+			logrus.Errorf("No rows found for: %s", snapId)
+		}
+	} else {
+		logrus.Errorf("Unable to update snap meta: %s", err2)
+	}
+
 	c.JSON(http.StatusOK, &dashboardResponses.Status{
 		Processed: true,
 		Code:      "ready_to_release",
 		Revision: int(rev.ID),
 	})
+}
+
+func (s *Server) releaseSnap(channels []string, snapEntryId uint, revisionId uint) error {
+	var trackForRelease string
+	var riskForRelease string
+	for _, cn := range channels {
+		// It's possible this comes in the form:
+		//   - single string values "edge" where the track is assumed to be "latest" there is no branch
+		//   - two values "latest/edge" where the risk is proceeded by the track
+		//   - three values "latest/edge/some_branch"
+		parts := strings.Split(cn, "/")
+		if len(parts) == 1 {
+			riskForRelease = parts[0]
+			trackForRelease = "latest"
+		} else if len(parts) == 2 {
+			trackForRelease = parts[0]
+			riskForRelease = parts[1]
+		} else if len(parts) == 3 {
+			return errors.New("branches not supported yet")
+		}
+
+		// get all the tracks
+		var track models.SnapTrack
+		db := s.db.Where(&models.SnapTrack{SnapEntryID: snapEntryId, Name: trackForRelease}).Find(&track)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			// get all the risks
+			var risk models.SnapRisk
+			db = s.db.Where(&models.SnapRisk{SnapEntryID: snapEntryId, Name: riskForRelease, SnapTrackID: track.ID}).Find(&risk)
+			if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+				var revision models.SnapRevision
+				db = s.db.Where("id", revisionId).Find(&revision)
+				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+					risk.RevisionID = revision.ID
+					s.db.Save(&risk)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) snapRelease(c *gin.Context) {
@@ -394,7 +455,6 @@ func (s *Server) snapRelease(c *gin.Context) {
 				var risk models.SnapRisk
 				db = s.db.Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: riskForRelease, SnapTrackID: track.ID}).Find(&risk)
 				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-
 					revisionNumber, err := strconv.Atoi(snapRelease.Revision)
 					if err != nil {
 						c.AbortWithError(http.StatusInternalServerError, err)
@@ -407,6 +467,8 @@ func (s *Server) snapRelease(c *gin.Context) {
 						risk.RevisionID = revision.ID
 						s.db.Save(&risk)
 					}
+				} else {
+					// TODO: we need to just create it if it didn't already exist
 				}
 			}
 		}
@@ -423,12 +485,13 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 	var snap models.SnapEntry
 	db := s.db.Where(&models.SnapEntry{Name: snapName}).Find(&snap)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-
 		var root generatedResponses.Root
 		var channelMapItems []*generatedResponses.ChannelMapItems
 		var revisions []*generatedResponses.RevisionsItems
 		var channelItems []*generatedResponses.ChannelsItems
 		var snapTracks []*generatedResponses.TracksItems
+
+		logrus.Tracef("Getting tracks for: %s", snap.Name)
 
 		var tracks []models.SnapTrack
 		db := s.db.Where(&models.SnapTrack{SnapEntryID: snap.ID}).Find(&tracks)
@@ -439,13 +502,21 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 					Name:           track.Name,
 				})
 
+				logrus.Tracef("Getting risks for track: %s", track.Name)
+
 				var risks []models.SnapRisk
 				db := s.db.Where(&models.SnapRisk{SnapEntryID: snap.ID, SnapTrackID: track.ID}).Find(&risks)
 				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 					for _, risk := range risks {
 						var revision models.SnapRevision
+
+						logrus.Tracef("Getting revision for risk: %s", risk.Name)
+
 						db := s.db.Where("id", risk.RevisionID).Find(&revision)
 						if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+
+							logrus.Tracef("Got revision %d", revision.ID)
+
 							channelMapItems = append(channelMapItems, &generatedResponses.ChannelMapItems{
 								Architecture: "amd64",
 								Channel:      track.Name + "/" + risk.Name,
@@ -490,4 +561,45 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) verifyACL(c *gin.Context) {
+	var verify dashboardRequests.Verify
+	err := json.NewDecoder(c.Request.Body).Decode(&verify)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	user, err := middleware.VerifyAndGetUser(s.db, verify.AuthData.Authorization)
+	if err != nil {
+		log.Fatalln(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	if user != nil {
+		v := dashboardResponses.Verify{
+			Allowed:               true,
+			DeviceRefreshRequired: false,
+			RefreshRequired:       false,
+			Account:               &dashboardResponses.VerifyAccount{
+				Email:       user.Email,
+				DisplayName: user.DisplayName,
+				OpenId:      "oid1234",
+				Verified:    true,
+			},
+			Device:                nil,
+			LastAuth:              "2016-05-26T12:53:23Z",
+			Permissions:           &[]string{ "package_access", "package_manage", "package_push", "package_register", "package_release", "package_update" },
+			SnapIds:               nil,
+			Channels:              nil,
+		}
+
+		c.JSON(http.StatusOK, &v)
+		return
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
+	return
 }

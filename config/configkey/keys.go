@@ -7,6 +7,7 @@ const (
 	MinioAccessKey        = "minio.access.key"
 	MinioSecretKey        = "minio.secret.key"
 	MinioHost             = "minio.host"
+	MinioSecure = "minio.secure"
 
 	DatabaseUsername = "database.username"
 	DatabaseDatabase = "database.database"

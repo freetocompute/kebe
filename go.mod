@@ -30,6 +30,8 @@ require (
 	gopkg.in/macaroon.v2 v2.1.0
 	gopkg.in/retry.v1 v1.0.3 // indirect
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
+	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	gorm.io/driver/postgres v1.1.0
 	gorm.io/gorm v1.21.10
 )

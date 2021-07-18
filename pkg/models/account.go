@@ -20,5 +20,4 @@ type Account struct {
 	Keys        []Key
 	SnapEntries []SnapEntry
 	Email 			 string
-	Password		 string
 }

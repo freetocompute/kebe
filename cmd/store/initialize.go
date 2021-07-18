@@ -160,13 +160,14 @@ func getMinioClient() *minio.Client {
 	accessKey := viper.GetString(configkey.MinioAccessKey)
 	secretKey := viper.GetString(configkey.MinioSecretKey)
 	minioHost := viper.GetString(configkey.MinioHost)
+	minioSecure := viper.GetBool(configkey.MinioSecure)
 
 	logrus.Infof("Minio host=%s, accessKey=%s, secretKey=%s", minioHost, accessKey, secretKey)
 
 	// Initialize minio client object.
 	minioClient, err := minio.New(minioHost, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: false,
+		Secure: minioSecure,
 	})
 	if err != nil {
 		log.Fatalln(err)
