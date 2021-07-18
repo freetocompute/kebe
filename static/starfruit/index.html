@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="shortcut icon" href="assets/images/favicon.ico" type="image/x-icon">
+    <title>Kebe Login</title>
+
+    <!-- Vendor css -->
+    <link rel="stylesheet" href="./src/vendors/@mdi/font/css/materialdesignicons.min.css">
+
+    <!-- Base css with customised bootstrap included -->
+    <link rel="stylesheet" href="./src/css/miri-ui-kit-free.css">
+
+    <!-- Stylesheet for demo page specific css -->
+    <link rel="stylesheet" href="./assets/css/demo.css">
+    <style>
+        .hide {
+            display: none;
+        }
+    </style>
+</head>
+<body class="login-page">
+    <header class="miri-ui-kit-header header-no-bg-img header-navbar-only">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-transparent">
+        </nav>
+    </header>
+    <div id="unauthorized" class="card login-card hide">
+        <div class="card-body">
+            <h3 class="text-center text-white font-weight-light mb-4">LOG IN</h3>
+            <form action="/login">
+                <input type="submit" value="Login" class="btn btn-danger btn-block mb-3">
+            </form>
+        </div>
+    </div>
+    <div id="authorized" class="card login-card hide">
+        <div class="card-body">
+            <h3 class="text-center text-white font-weight-light mb-4">You are logged in now. You may close this window.</h3>
+        </div>
+    </div>
+    <footer>
+        <div class="container">
+            <nav class="navbar navbar-dark bg-transparent navbar-expand footer-navbar d-block d-sm-flex text-center">
+                <span class="navbar-text">&copy; BootstrapDash. All rights reserved.</span>
+            </nav>
+        </div>
+    </footer>
+    <script>
+        fetch("/api/account").then((response) => {
+            if (response.status === 401) {
+                document.getElementById("unauthorized").classList.remove("hide");
+                throw "Unauthorized";
+            }
+            return response.json();
+        }).then((json) => {
+            console.log(json);
+            // document.getElementById("email").innerHTML = json.email;
+            // document.getElementById("groups").innerHTML = json.groups;
+            // document.getElementById("img").src = json.imageUrl;
+            document.getElementById("authorized").classList.remove("hide");
+        });
+    </script>
+    <script src="./src/vendors/jquery/dist/jquery.min.js"></script>
+    <script src="./src/vendors/popper.js/dist/umd/popper.min.js"></script>
+    <script src="./src/vendors/bootstrap/dist/js/bootstrap.min.js"></script>
+</body>
+</html>
