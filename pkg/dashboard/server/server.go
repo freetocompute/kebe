@@ -31,6 +31,7 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"io"
 	"log"
 	"net/http"
@@ -118,15 +119,46 @@ func (s *Server) getAccount(c *gin.Context) {
 	accountUn, exists := c.Get("account")
 	if exists {
 		account, ok := accountUn.(*models.Account)
+		logrus.Tracef("Account: %+v", account)
+		var accountPreloaded models.Account
+		s.db.Where(&models.Account{AccountId: account.AccountId}).Preload(clause.Associations).Find(&accountPreloaded)
+		logrus.Tracef("Account: %+v", accountPreloaded)
+
 		if ok {
-			// TODO: this would actually need to be filled in
-			c.JSON(http.StatusOK, &dashboardResponses.AccountInfo{
+			accountInfoResponse := dashboardResponses.AccountInfo{
 				AccountId: account.AccountId,
-				Snaps: map[string]map[string]map[string]string{
-					"16": {},
-				},
+				Snaps: map[string]map[string]dashboardResponses.Snap{},
 				AccountKeys: []dashboardResponses.Key{},
-			})
+			}
+
+			for _, k := range accountPreloaded.Keys {
+				accountInfoResponse.AccountKeys = append(accountInfoResponse.AccountKeys, dashboardResponses.Key{
+					PublicKeySHA384: k.SHA3384,
+					Name:            k.Name	,
+				})
+			}
+
+			snaps := map[string]dashboardResponses.Snap{}
+			for _, s := range accountPreloaded.SnapEntries {
+				// TODO: replace with real data
+				snaps[s.Name] = dashboardResponses.Snap{
+					Status: "Approved",
+					SnapId: s.SnapStoreID,
+					Store:  "Global",
+					Since: "2016-07-04T23:37:52Z",
+					Private: false,
+				}
+			}
+
+			accountInfoResponse.Snaps["16"] = snaps
+
+			logrus.Tracef("accountInfoResponse: %+v", accountInfoResponse)
+
+			json, _ := json.Marshal(&accountInfoResponse)
+			logrus.Tracef(string(json))
+
+			// TODO: this would actually need to be filled in
+			c.JSON(http.StatusOK, &accountInfoResponse)
 		}
 	}
 }
