@@ -6,7 +6,7 @@ type Snap struct {
 	Store string `json:"store"`
 	Since string `json:"since"`
 	Private bool `json:"private"`
-	Price string `json:"price	"`
+	Price string `json:"price"`
 }
 
 type AccountInfo struct {
