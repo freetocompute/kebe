@@ -12,6 +12,7 @@ import (
 	"github.com/freetocompute/kebe/pkg/dashboard/responses"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/login/requests"
+	responses2 "github.com/freetocompute/kebe/pkg/login/responses"
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -20,6 +21,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"io"
 	"log"
 	"net/http"
@@ -150,4 +152,28 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusUnauthorized)
+}
+
+func (s *Server) getSSHKeys(c *gin.Context) {
+	emailAddress := c.Param("email")
+	logrus.Tracef("Email to get ssh keys for: %s", emailAddress)
+	var account models.Account
+	db := s.db.Where(&models.Account{Email: emailAddress}).Preload(clause.Associations).Find(&account)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+
+		sshkeysResp := responses2.SSHKeys{
+			Username:         account.Username,
+			SSHKeys:          []string{},
+			OpenIdIdentifier: account.Username,
+		}
+		for _, k := range account.SSHKeys {
+			sshkeysResp.SSHKeys = append(sshkeysResp.SSHKeys, k.PublicKeyString)
+		}
+
+		c.JSON(http.StatusOK, &sshkeysResp)
+		return
+	}
+
+	logrus.Error("there was no record for email address found")
+	c.AbortWithStatus(http.StatusInternalServerError)
 }

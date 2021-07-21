@@ -21,10 +21,12 @@ import (
 	"github.com/snapcore/snapd/snap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -340,9 +342,75 @@ func (s *Store) unscannedUpload(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
 		})
+		return
 	}
 
 	c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
+}
+
+func (s *Store) authRequestIdPOST(c *gin.Context) {
+	nextAuthRequest := models.AuthRequest{}
+	database.DB.Save(&nextAuthRequest)
+
+	c.JSON(http.StatusOK, requests.RequestIDResp{RequestID:strconv.Itoa(int(nextAuthRequest.ID))})
+}
+
+func (s *Store) authDevicePOST(c *gin.Context) {
+	request := c.Request
+	writer := c.Writer
+	dec := asserts.NewDecoder(request.Body)
+	for {
+		got, err := dec.Decode()
+		if err == io.EOF {
+			break
+		}
+		if err != nil { // assume broken i/o
+			// return nil, nil, retryErr(t, 0, "cannot read response to request for a serial: %v", err)
+			panic(err)
+		}
+		if got.Type() == asserts.SerialRequestType {
+			logrus.Trace("WE GOT A SERIAL REQUEST!")
+
+			serialRequst := got.(*asserts.SerialRequest)
+			// logrus.Tracef("%+v", *serialRequst)
+
+			if s.signingDB.IsTrustedAccount(serialRequst.AuthorityID()) {
+				logrus.Info("Trusted")
+			} else {
+				logrus.Info("NOT Trusted")
+			}
+
+			serial := uuid.New().String()
+			encodedKeyBytes, err := asserts.EncodePublicKey(serialRequst.DeviceKey())
+			if err != nil {
+				panic(err)
+			}
+
+			serialHeaders := map[string]interface{}{
+				"brand-id":  serialRequst.BrandID(),
+				"model":     serialRequst.Model(),
+				"authority-id": "generic",
+				"serial": serial,
+				"device-key": string(encodedKeyBytes),
+				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
+				"timestamp": "2021-03-06T15:04:00Z",
+			}
+
+			// TODO: look up actual account, get key, etc.
+			serialAssertion, err := s.signingDB.Sign(asserts.SerialType, serialHeaders, nil, "VcGPmDU3eQGazDvQshDE3PU1HZTx-HPSeQAio4XOUeEjFrXRHmZWVcBN--7zDf2i")
+			if err != nil {
+				panic(err)
+			}
+
+			encodedSerialAssertion := asserts.Encode(serialAssertion)
+			logrus.Trace("Sending serial assertion: ")
+			logrus.Trace(string(encodedSerialAssertion))
+
+			writer.Header().Set("Content-Type", asserts.MediaType)
+			writer.WriteHeader(200)
+			writer.Write(asserts.Encode(serialAssertion))
+		}
+	}
 }
 
 func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {

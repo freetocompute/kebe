@@ -22,4 +22,7 @@ func (s *Store) SetupEndpoints(r *gin.Engine) {
 	r.GET("/v2/assertions/account/:id", s.getAccountAssertion)
 
 	r.POST("/unscanned-upload/", s.unscannedUpload)
+
+	r.POST("/api/v1/snaps/auth/request-id", s.authRequestIdPOST)
+	r.POST("/api/v1/snaps/auth/devices", s.authDevicePOST)
 }
