@@ -165,12 +165,6 @@ func (s *Store) snapRefresh(c *gin.Context) {
 						Snap:        storeSnap,
 					}
 
-					// TODO: need to add base to database, set properly
-					//base := "core18"
-					//if snapEntry.Name == "itl-pc" {
-					//	actionResult.Snap.Base = &base
-					//}
-
 					actionResultList := responses.SnapActionResultList{
 						Results: []*responses.SnapActionResult{
 							&actionResult,
@@ -203,6 +197,7 @@ func (s *Store) snapRefresh(c *gin.Context) {
 						Name:        snapEntry.Name,
 						Snap:        storeSnap,
 					}
+
 					actionResultList := responses.SnapActionResultList{
 						Results: []*responses.SnapActionResult{
 							&actionResult,
@@ -254,11 +249,22 @@ func (s *Store) findSnap(c *gin.Context) {
 		results := func() []responses.StoreSearchResult {
 			var results []responses.StoreSearchResult
 
-			var snapType snap.Type
-			if snapEntry.Type == "app" {
-				snapType = snap.TypeApp
-			} else if snapEntry.Type == "os" {
+			snapType := snap.TypeApp
+			switch snapEntry.Type {
+			case "os":
 				snapType = snap.TypeOS
+				break
+			case "snapd":
+				snapType = snap.TypeSnapd
+				break
+			case "base":
+				snapType = snap.TypeBase
+				break
+			case "gadget":
+				snapType = snap.TypeGadget
+				break
+			case "kernel":
+				snapType = snap.TypeKernel
 			}
 
 			results = append(results, responses.StoreSearchResult{

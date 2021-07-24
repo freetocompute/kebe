@@ -330,6 +330,9 @@ func (s *Server) pushSnap(c *gin.Context) {
 	db := s.db.Where(&models.SnapEntry{Name: pushSnap.Name}).Find(&snap)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 
+		// TODO: we can't create a revision here until we know what it's SHA is,
+		// we'll need to make this a record of its own and the resolve it
+		// when the actual upload has finished
 		rev := models.SnapRevision{
 			SnapFilename:           pushSnap.UpDownId + ".snap",
 			SnapEntryID:            snap.ID,
@@ -354,6 +357,33 @@ func (s *Server) pushSnap(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) updateMeta(metaBytes *[]byte, snapId string) {
+	snapMeta, err2 := snap.GetSnapMetaFromBytes(*metaBytes, "/tmp")
+	if err2 == nil {
+		logrus.Tracef("snapMeta: %+v", snapMeta)
+		var snapEntry models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: snapMeta.Name}).Find(&snapEntry)
+		if _, ok :=database.CheckDBForErrorOrNoRows(db); ok {
+			snapEntry.Type = "app"
+
+			if snapMeta.Type != "" {
+				snapEntry.Type = snapMeta.Type
+			} else {
+				logrus.Warnf("Snap %s had an emtpy type from its metadata, using default '%s'", snapEntry.Name, snapEntry.Type)
+			}
+
+			snapEntry.Confinement = snapMeta.Confinement
+			snapEntry.Base = snapMeta.Base
+
+			s.db.Save(&snapEntry)
+		} else {
+			logrus.Errorf("No rows found for: %s", snapId)
+		}
+	} else {
+		logrus.Errorf("Unable to update snap meta: %s", err2)
+	}
 }
 
 // The id here is the up-down id generated from the upload to /unscanned-upload/
@@ -384,6 +414,7 @@ func (s *Server) getStatus(c *gin.Context) {
 	h.Write(bytes)
 	actualSha3 := fmt.Sprintf("%x", h.Sum(nil))
 
+	// TODO: don't add a revision to a channel if one already exists that is this file
 	digest, _, err := sha.SnapFileSHA3_384FromReader(bytes2.NewReader(bytes))
 	if err != nil {
 		panic(err)
@@ -394,25 +425,7 @@ func (s *Server) getStatus(c *gin.Context) {
 
 	s.db.Save(&rev)
 
-	snapMeta, err2 := snap.GetSnapMetaFromBytes(bytes, "/tmp")
-	if err2 == nil {
-		logrus.Tracef("snapMeta: %+v", snapMeta)
-		var snapEntry models.SnapEntry
-		db := s.db.Where(&models.SnapEntry{Name: snapMeta.Name}).Find(&snapEntry)
-		if _, ok :=database.CheckDBForErrorOrNoRows(db); ok {
-			if snapMeta.Type != "" {
-				snapEntry.Type = snapMeta.Type
-			} else {
-				logrus.Warnf("Snap %s had an emtpy type from its metadata, using 'app'", snapEntry.Name)
-			}
-			snapEntry.Confinement = snapMeta.Confinement
-			s.db.Save(&snapEntry)
-		} else {
-			logrus.Errorf("No rows found for: %s", snapId)
-		}
-	} else {
-		logrus.Errorf("Unable to update snap meta: %s", err2)
-	}
+	s.updateMeta(&bytes, snapId)
 
 	c.JSON(http.StatusOK, &dashboardResponses.Status{
 		Processed: true,

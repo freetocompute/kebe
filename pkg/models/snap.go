@@ -57,6 +57,7 @@ type SnapEntry struct {
 	Revisions        []SnapRevision
 	Type             string
 	Confinement      string
+	Base			 string
 
 	AccountID uint
 	Account   Account
@@ -97,6 +98,7 @@ func (se *SnapEntry) ToStoreSnap(snapRevision *SnapRevision) (*responses.StoreSn
 			URL:      downloadURL,
 		},
 		Confinement: se.Confinement,
+		Base: &se.Base,
 	}
 
 	return storeSnap, nil

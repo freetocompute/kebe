@@ -20,6 +20,7 @@ type SnapMeta struct {
 	Architectures []string `yaml:"architectures"`
 	Confinement string `yaml:"confinement"`
 	Grade string `yaml:"grade"`
+	Base string `yaml:"base"`
 }
 
 // GetSnapMetaFromFile will return SnapMeta from a byte array representing a snap file

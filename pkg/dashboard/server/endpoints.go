@@ -33,10 +33,4 @@ func (s *Server) SetupEndpoints(r *gin.Engine) {
 	apiV2Private.GET("/snaps/:snap/channel-map", s.getSnapChannelMap)
 
 	// TODO: implement /api/v2/snaps/<snap-name>/releases for `snapcraft list-revisions <snap-name>`
-	// TODO: implement /api/v2/snaps/<snap-name>/channel-map for `snapcraft list-tracks <snap-name>`
-	// TODO: implement /dev/api/snap-release/ for `snapcraft release <snap-name> <revision> <channels>`
-	// TODO: implement /dev/api/snap-push/ for `snapcraft upload <snap-name>`
-
-	// TODO: implement "/api/v1/snaps/auth/request-id"
-	// TODO: implement "/api/v1/snaps/auth/devices"
 }
