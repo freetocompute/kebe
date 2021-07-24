@@ -400,7 +400,11 @@ func (s *Server) getStatus(c *gin.Context) {
 		var snapEntry models.SnapEntry
 		db := s.db.Where(&models.SnapEntry{Name: snapMeta.Name}).Find(&snapEntry)
 		if _, ok :=database.CheckDBForErrorOrNoRows(db); ok {
-			snapEntry.Type = snapMeta.Type
+			if snapMeta.Type != "" {
+				snapEntry.Type = snapMeta.Type
+			} else {
+				logrus.Warnf("Snap %s had an emtpy type from its metadata, using 'app'", snapEntry.Name)
+			}
 			snapEntry.Confinement = snapMeta.Confinement
 			s.db.Save(&snapEntry)
 		} else {
