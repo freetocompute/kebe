@@ -19,9 +19,6 @@ CREATE TABLE IF NOT EXISTS public.ssh_keys
 
 ALTER TABLE public.ssh_keys
     OWNER to manager;
--- Index: idx_accounts_deleted_at
-
--- DROP INDEX public.idx_accounts_deleted_at;
 
 CREATE INDEX idx_ssh_keys_deleted_at
     ON public.ssh_keys USING btree
