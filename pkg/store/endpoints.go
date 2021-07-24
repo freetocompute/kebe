@@ -23,6 +23,9 @@ func (s *Store) SetupEndpoints(r *gin.Engine) {
 
 	r.POST("/unscanned-upload/", s.unscannedUpload)
 
+	// auth: https://api.snapcraft.io/docs/auth.html
 	r.POST("/api/v1/snaps/auth/request-id", s.authRequestIdPOST)
 	r.POST("/api/v1/snaps/auth/devices", s.authDevicePOST)
+	r.POST("/api/v1/snaps/auth/nonces", s.authNonce)
+	r.POST("/api/v1/snaps/auth/sessions", s.authSession)
 }

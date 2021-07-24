@@ -139,3 +139,11 @@ type Upload struct {
 	Success bool
 	StatusDetailsURL string `json:"status_details_url"`
 }
+
+type Nonce struct {
+	Nonce string `json:"nonce"`
+}
+
+type Session struct {
+	Macaroon string `json:"macaroon"`
+}

@@ -308,6 +308,8 @@ func (s *Store) getSnapNames(c *gin.Context) {
 	writer.Header().Set("Content-Type", "application/hal+json")
 
 	var snaps []models.SnapEntry
+
+	// TODO: would need to implement private and filter here
 	s.db.Find(&snaps)
 	catalogItems := responses.CatalogResults{
 		Payload: responses.CatalogPayload{
@@ -439,6 +441,16 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			writer.Write(asserts.Encode(serialAssertion))
 		}
 	}
+}
+
+func (s *Store) authNonce(c *gin.Context) {
+	// TODO: do we need to store this?
+	nonce := responses.Nonce{Nonce: uuid.New().String()}
+	c.JSON(http.StatusOK, &nonce)
+}
+
+func (s *Store) authSession(c *gin.Context) {
+	c.JSON(http.StatusOK, &responses.Session{Macaroon: "12345-678-9101112"})
 }
 
 func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {

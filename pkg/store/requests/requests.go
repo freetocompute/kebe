@@ -75,3 +75,10 @@ type SnapRelease struct {
 	Revision string
 	Channels []string
 }
+
+type Session struct {
+	// asserts.DeviceSessionRequest
+	DeviceSessionRequest string `json:"device-session-request"`
+	ModelAssertion string `json:"model-assertion"`
+	SerialAssertion string `json:"serial-assertion"`
+}
