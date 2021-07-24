@@ -119,7 +119,7 @@ var Initialize = cobra.Command{
 		db, _ := database.CreateDatabase()
 
 		// generate trusted account and account key
-		createTrustedAccountExt(minioClient, rootKey, signingDB, initConfig.RootAccountInit.Id, initConfig.RootAccountInit.Username, "root", "default")
+		createTrustedAccountExt(minioClient, rootKey, rootKey.PublicKey().ID(), signingDB, initConfig.RootAccountInit.Id, initConfig.RootAccountInit.Username, "root", "default")
 		rootAccount := models.Account{
 			AccountId:   initConfig.RootAccountInit.Id,
 			DisplayName: initConfig.RootAccountInit.DisplayName,
@@ -141,7 +141,7 @@ var Initialize = cobra.Command{
 		// TODO: this is a redundant load
 		genericKey := crypto.GetPrivateKeyFromPEMFile(initConfig.GenericKeyPath)
 
-		createTrustedAccountExt(minioClient, rootKey, signingDB, initConfig.GenericAccountInit.Id, initConfig.GenericAccountInit.Username, "generic", "default")
+		createTrustedAccountExt(minioClient, genericKey, rootKey.PublicKey().ID(), signingDB, initConfig.GenericAccountInit.Id, initConfig.GenericAccountInit.Username, "generic", "default")
 		genericAccount := models.Account{
 			AccountId:   initConfig.GenericAccountInit.Id,
 			DisplayName: initConfig.GenericAccountInit.DisplayName,
@@ -300,12 +300,12 @@ func generateGenericAssertions(minioClient *minio.Client, rootPrivateKey asserts
 	}
 }
 
-func createTrustedAccountExt(minioClient *minio.Client, rootPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB,
+func createTrustedAccountExt(minioClient *minio.Client, accountKey asserts.PrivateKey, signingKeyId string, signingDB *assertstest.SigningDB,
 	accountId string, accountUsername string, bucketName string, accountKeyName string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	accountAssertion, bytes := createAccountAssertion(signingDB, rootPrivateKey.PublicKey().ID(), accountId, accountUsername)
+	accountAssertion, bytes := createAccountAssertion(signingDB, signingKeyId, accountId, accountUsername)
 	signingDB.Add(accountAssertion)
 
 	_, err := minioClient.PutObject(ctx, bucketName, "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
@@ -313,7 +313,7 @@ func createTrustedAccountExt(minioClient *minio.Client, rootPrivateKey asserts.P
 		logrus.Error(err)
 	}
 
-	_, bytes = createAccountKeyAssertion(signingDB, rootPrivateKey.PublicKey(), rootPrivateKey.PublicKey().ID(), accountAssertion, accountKeyName)
+	_, bytes = createAccountKeyAssertion(signingDB, accountKey.PublicKey(), signingKeyId, accountAssertion, accountKeyName)
 	_, err = minioClient.PutObject(ctx, bucketName, "account-key.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
 	if err != nil {
 		logrus.Error(err)
