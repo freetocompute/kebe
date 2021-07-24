@@ -79,6 +79,7 @@ type CatalogItem struct {
 	Summary string   `json:"summary"`
 	Aliases []Alias  `json:"aliases"`
 	Apps    []string `json:"apps"`
+	Title   string   `json:"title"`
 }
 
 type SnapRelease struct {

@@ -307,10 +307,28 @@ func (s *Store) getSnapNames(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/hal+json")
 
+	var snaps []models.SnapEntry
+	s.db.Find(&snaps)
 	catalogItems := responses.CatalogResults{
 		Payload: responses.CatalogPayload{
 			Items: []responses.CatalogItem{},
 		},
+	}
+
+	for _, s := range snaps {
+		catalogItems.Payload.Items = append(catalogItems.Payload.Items, responses.CatalogItem{
+			Name:    s.Name,
+			// TODO: implement version
+			Version: "none provided",
+			// TODO: implement summary
+			Summary: "none provided",
+			// TODO: implement aliases
+			Aliases: nil,
+			// TODO: implement apps
+			Apps:    nil,
+			// TODO: implement title
+			Title:   "none provided",
+		})
 	}
 
 	bytes, err := json.Marshal(&catalogItems)
