@@ -14,9 +14,24 @@ var databasePortVar int
 var databaseUsernameVar string
 var databasePasswordVar string
 var databaseDatabaseVar string
+var initializationConfigPath string
+
+type AccountInit struct {
+	Id string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username string `json:"username"`
+	Email string `json:"email"`
+}
+
+type InitializationConfig struct {
+	AuthorityId string `json:"authority_id"`
+	RootKeyPath string `json:"root_key_path"`
+	GenericKeyPath string `json:"generic_key_path"`
+	RootAccountInit AccountInit `json:"root_account_init"`
+	GenericAccountInit AccountInit `json:"generic_account_init"`
+}
 
 func init() {
-	Store.AddCommand(&Initialize)
 	Store.Flags().StringVarP(&minioHostVar, "minio-host", "m", "", "The MinIO host, like minio.awesome.com:30900")
 	Store.Flags().StringVarP(&minioAccessKeyVar, "minio-access-key", "a", "", "The MinIO access key")
 	Store.Flags().StringVarP(&minioSecretKeyVar, "minio-secret-key", "k", "", "The MinIO secrety key")
@@ -42,8 +57,13 @@ func init() {
 	_ = viper.BindPFlag(configkey.DatabaseUsername, Store.Flags().Lookup("db-username"))
 	_ = viper.BindPFlag(configkey.DatabaseDatabase, Store.Flags().Lookup("db-database"))
 
+	Store.AddCommand(&Initialize)
+	Initialize.Flags().StringVarP(&initializationConfigPath, "initialization-config-path", "i", "", "The path the the initialization json config path")
+	_ = Initialize.MarkFlagRequired("initialization-config-path")
+	_ = viper.BindPFlag(configkey.StoreInitializationConfigPath, Store.Flags().Lookup("initialization-config-path"))
+
 	Store.AddCommand(&Destroy)
-	Store.AddCommand(&RegenerateAssertions)
+	// Store.AddCommand(&RegenerateAssertions)
 }
 
 var Store = &cobra.Command{

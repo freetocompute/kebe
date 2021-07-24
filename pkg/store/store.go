@@ -37,6 +37,7 @@ type Store struct {
 	db              *gorm.DB
 	assertsDatabase *asserts.Database
 	rootStoreKey    *rsa.PrivateKey
+	genericPrivateKey *rsa.PrivateKey
 	signingDB       *assertstest.SigningDB
 }
 
@@ -54,11 +55,21 @@ func NewStore(db *gorm.DB) *Store {
 	rootAuthorityId := config.MustGetString(configkey.RootAuthority)
 	signingDB := assertstest.NewSigningDB(rootAuthorityId, asserts.RSAPrivateKey(rootPrivateKey))
 
+	bytes, _ = obs.GetFileFromBucket("generic", "private-key.pem")
+	genericPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
+	if err != nil {
+		logrus.Error(err)
+		return nil
+	}
+
+	signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
+
 	return &Store{
 		db:              db,
 		assertsDatabase: assertsDatabase,
 		rootStoreKey:    rootPrivateKey,
 		signingDB:       signingDB,
+		genericPrivateKey: genericPrivateKey,
 	}
 }
 
@@ -153,6 +164,13 @@ func (s *Store) snapRefresh(c *gin.Context) {
 						Name:        snapEntry.Name,
 						Snap:        storeSnap,
 					}
+
+					// TODO: need to add base to database, set properly
+					//base := "core18"
+					//if snapEntry.Name == "itl-pc" {
+					//	actionResult.Snap.Base = &base
+					//}
+
 					actionResultList := responses.SnapActionResultList{
 						Results: []*responses.SnapActionResult{
 							&actionResult,
@@ -369,16 +387,7 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			panic(err)
 		}
 		if got.Type() == asserts.SerialRequestType {
-			logrus.Trace("WE GOT A SERIAL REQUEST!")
-
 			serialRequst := got.(*asserts.SerialRequest)
-			// logrus.Tracef("%+v", *serialRequst)
-
-			if s.signingDB.IsTrustedAccount(serialRequst.AuthorityID()) {
-				logrus.Info("Trusted")
-			} else {
-				logrus.Info("NOT Trusted")
-			}
 
 			serial := uuid.New().String()
 			encodedKeyBytes, err := asserts.EncodePublicKey(serialRequst.DeviceKey())
@@ -389,7 +398,7 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			serialHeaders := map[string]interface{}{
 				"brand-id":  serialRequst.BrandID(),
 				"model":     serialRequst.Model(),
-				"authority-id": "generic",
+				"authority-id": serialRequst.BrandID(),
 				"serial": serial,
 				"device-key": string(encodedKeyBytes),
 				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
@@ -397,7 +406,8 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			}
 
 			// TODO: look up actual account, get key, etc.
-			serialAssertion, err := s.signingDB.Sign(asserts.SerialType, serialHeaders, nil, "VcGPmDU3eQGazDvQshDE3PU1HZTx-HPSeQAio4XOUeEjFrXRHmZWVcBN--7zDf2i")
+			ak := asserts.RSAPrivateKey(s.genericPrivateKey)
+			serialAssertion, err := s.signingDB.Sign(asserts.SerialType, serialHeaders, nil, ak.PublicKey().ID())
 			if err != nil {
 				panic(err)
 			}

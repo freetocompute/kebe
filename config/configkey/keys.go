@@ -27,6 +27,7 @@ const (
 	AdminDURL = "admind.url"
 
 	StoreAPIURL = "store.api.url"
+	StoreInitializationConfigPath = "store.initialization.config.path"
 
 	OIDCClientId = "oidc.client.id"
 	OIDCClientSecret = "oidc.client.secret"

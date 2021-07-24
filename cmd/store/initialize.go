@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
+	"github.com/freetocompute/kebe/pkg/database"
+	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
@@ -41,83 +44,34 @@ var Destroy = cobra.Command{
 				logrus.Error(err)
 			}
 		}
-	},
-}
 
-var RegenerateAssertions = cobra.Command{
-	Use:   "regenerate-assertions",
-	Short: "Regenerates the assertions using the existing keys",
-	Run: func(cmd *cobra.Command, args []string) {
-		minioClient := getMinioClient()
-		if minioClient == nil {
-			panic("no minio connection")
+		db, _ := database.CreateDatabase()
+		tables := []string{
+			"schema_migrations",
+			"snap_branches",
+			"snap_risks",
+			"snap_tracks",
+			"ssh_keys",
+			"snap_revisions",
+			"snap_entries",
+			"keys",
+			"accounts",
+		}
+		for _, t := range tables {
+			db.Exec("DROP TABLE " + t)
 		}
 
-		// regenerate account and account key for the root
-		// regenerateRootAccountAsertions()
-
-		// regenerate generic account, account-key and model
-		_ = regenerateGenericAccountAssertions()
+		sequences := []string{
+			"accounts_id_seq",
+			"keys_id_seq",
+			"snap_entries_id_seq",
+			"snap_revisions_id_seq",
+			"ssh_keys_id_seq",
+		}
+		for _, s := range sequences {
+			db.Exec("DROP SEQUENCE " + s)
+		}
 	},
-}
-
-func regenerateGenericAccountAssertions() error {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-	minioClient := getMinioClient()
-	objectPtr, err := minioClient.GetObject(ctx, "root",
-		"private-key.pem", minio.GetObjectOptions{})
-
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
-
-	bytes, err2 := ioutil.ReadAll(objectPtr)
-	if err2 != nil {
-		logrus.Error(err2)
-		return err2
-	}
-
-	rootPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
-
-	objectPtr, err = minioClient.GetObject(ctx, "generic",
-		"private-key.pem", minio.GetObjectOptions{})
-
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
-
-	bytes, err = ioutil.ReadAll(objectPtr)
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
-
-	genericPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-	if err != nil {
-		logrus.Error(err)
-		return err
-	}
-
-	storeRootPrivateKey := asserts.RSAPrivateKey(rootPrivateKey)
-
-	// create a signing database with the store's root key
-	signingDB := assertstest.NewSigningDB("kebe-store", storeRootPrivateKey)
-
-	// generate trusted account and account key
-	createTrustedAccount(minioClient, storeRootPrivateKey, signingDB)
-
-	// generate generic account, account-key and mode
-	generateGenericAssertions(minioClient, storeRootPrivateKey, signingDB, asserts.RSAPrivateKey(genericPrivateKey), ctx, "generic")
-
-	return nil
 }
 
 var Initialize = cobra.Command{
@@ -138,22 +92,101 @@ var Initialize = cobra.Command{
 			return
 		}
 
-		storeRootPrivateKey := createRootKey(minioClient)
+		exists, err = minioClient.BucketExists(context.Background(), "generic")
+		if err != nil {
+			panic(err)
+		}
+
+		if exists {
+			fmt.Println("Bucket exists, please use destroy command if you are sure you want to start over.")
+			return
+		}
+
+		var initConfig InitializationConfig
+		bytes, _ := ioutil.ReadFile(initializationConfigPath)
+		_ = json.Unmarshal(bytes, &initConfig)
+
+		fmt.Printf("%+v\n", initConfig)
+
+		makeBucketAndAddKey(minioClient, "root", initConfig.RootKeyPath, "private-key.pem")
+		makeBucketAndAddKey(minioClient, "generic", initConfig.GenericKeyPath, "private-key.pem")
+
+		// TODO: this is a redundant load
+		rootKey := crypto.GetPrivateKeyFromPEMFile(initConfig.RootKeyPath)
 
 		// create a signing database with the store's root key
-		signingDB := assertstest.NewSigningDB("kebe-store", storeRootPrivateKey)
+		signingDB := assertstest.NewSigningDB(initConfig.AuthorityId, rootKey)
+		db, _ := database.CreateDatabase()
 
 		// generate trusted account and account key
-		createTrustedAccount(minioClient, storeRootPrivateKey, signingDB)
+		createTrustedAccountExt(minioClient, rootKey, signingDB, initConfig.RootAccountInit.Id, initConfig.RootAccountInit.Username, "root", "default")
+		rootAccount := models.Account{
+			AccountId:   initConfig.RootAccountInit.Id,
+			DisplayName: initConfig.RootAccountInit.DisplayName,
+			Username:    initConfig.RootAccountInit.Username,
+			Email:       initConfig.RootAccountInit.Email,
+		}
+		db.Save(&rootAccount)
+		rootAccountKey := models.Key{
+			Name:             "default",
+			//TODO: get actual sha3384, is it needed?
+			SHA3384:          rootKey.PublicKey().ID(),
+			EncodedPublicKey: rootKey.PublicKey().ID(),
+			AccountID:        rootAccount.ID,
+		}
+		db.Save(&rootAccountKey)
 
+		//
 		// generate generic account, account-key and mode
-		createGenericAccount(minioClient, storeRootPrivateKey, signingDB)
+		// TODO: this is a redundant load
+		genericKey := crypto.GetPrivateKeyFromPEMFile(initConfig.GenericKeyPath)
+
+		createTrustedAccountExt(minioClient, rootKey, signingDB, initConfig.GenericAccountInit.Id, initConfig.GenericAccountInit.Username, "generic", "default")
+		genericAccount := models.Account{
+			AccountId:   initConfig.GenericAccountInit.Id,
+			DisplayName: initConfig.GenericAccountInit.DisplayName,
+			Username:    initConfig.GenericAccountInit.Username,
+			Email:       initConfig.GenericAccountInit.Email,
+		}
+		db.Save(&genericAccount)
+		genericAccountKey := models.Key{
+			Name:             "default",
+			//TODO: get actual sha3384, is it needed?
+			SHA3384:          genericKey.PublicKey().ID(),
+			EncodedPublicKey: genericKey.PublicKey().ID(),
+			AccountID:        genericAccount.ID,
+		}
+		db.Save(&genericAccountKey)
 
 		fmt.Println("*******************************")
 		fmt.Printf("ALL DONE. Browse to %s/%s to view your assertions.\n", viper.GetString(configkey.MinioHost), "minio/root/")
 		fmt.Println("*******************************")
-
 	},
+}
+
+func makeBucketAndAddKey(minioClient *minio.Client, bucketName string, keyPath string, keyName string) {
+	// Make root bucket
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	objectCh := minioClient.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+		Recursive: true,
+	})
+	for object := range objectCh {
+		logrus.Tracef("object: %s", object.Key)
+	}
+
+	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
+	if err != nil {
+		logrus.Error(err)
+	}
+
+	bytes, _ := ioutil.ReadFile(keyPath)
+	rootPrivateKey, _ := crypto.ParseRSAPrivateKeyFromPEM(bytes)
+	keyString := crypto.ExportRsaPrivateKeyAsPemStr(rootPrivateKey)
+
+	minioClient.PutObject(ctx, bucketName, keyName, strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
 }
 
 func getMinioClient() *minio.Client {
@@ -267,20 +300,21 @@ func generateGenericAssertions(minioClient *minio.Client, rootPrivateKey asserts
 	}
 }
 
-func createTrustedAccount(minioClient *minio.Client, rootPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB) {
+func createTrustedAccountExt(minioClient *minio.Client, rootPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB,
+	accountId string, accountUsername string, bucketName string, accountKeyName string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	accountAssertion, bytes := createAccountAssertion(signingDB, rootPrivateKey.PublicKey().ID(), "kebe-store", "kebe-store")
+	accountAssertion, bytes := createAccountAssertion(signingDB, rootPrivateKey.PublicKey().ID(), accountId, accountUsername)
 	signingDB.Add(accountAssertion)
 
-	_, err := minioClient.PutObject(ctx, "root", "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
+	_, err := minioClient.PutObject(ctx, bucketName, "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
 	if err != nil {
 		logrus.Error(err)
 	}
 
-	_, bytes = createAccountKeyAssertion(signingDB, rootPrivateKey.PublicKey(), rootPrivateKey.PublicKey().ID(), accountAssertion, "kebe-store")
-	_, err = minioClient.PutObject(ctx, "root", "account-key.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
+	_, bytes = createAccountKeyAssertion(signingDB, rootPrivateKey.PublicKey(), rootPrivateKey.PublicKey().ID(), accountAssertion, accountKeyName)
+	_, err = minioClient.PutObject(ctx, bucketName, "account-key.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -309,10 +343,6 @@ func createPrivateKey(minioClient *minio.Client, bucketName string, keyName stri
 	minioClient.PutObject(ctx, bucketName, keyName, strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
 
 	return aPK
-}
-
-func createRootKey(minioClient *minio.Client) asserts.PrivateKey {
-	return createPrivateKey(minioClient, "root", "private-key.pem", 4096)
 }
 
 func createAccountKeyAssertion(signingDB *assertstest.SigningDB, publicKey asserts.PublicKey, keyId string, trustedAcct *asserts.Account, name string) (*asserts.AccountKey, []byte) {

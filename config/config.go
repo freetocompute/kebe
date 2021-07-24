@@ -21,7 +21,7 @@ var DefaultValues = map[string]interface{}{
 	configkey.MinioHost:             "localhost",
 	configkey.MinioSecretKey:        "password",
 	configkey.MinioAccessKey:        "user",
-	configkey.MinioSecure: true,
+	configkey.MinioSecure: false,
 	configkey.DatabaseUsername:      "manager",
 	configkey.DatabaseDatabase:      "store",
 	configkey.DatabaseHost:          "localhost",
