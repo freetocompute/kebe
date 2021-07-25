@@ -12,7 +12,6 @@ const (
 	hashDigestBufSize = 2 * 1024 * 1024
 )
 
-
 // SnapFileSHA3_384 computes the SHA3-384 digest of the given snap file.
 // It also returns its size.
 func SnapFileSHA3_384(snapPath string) (digest string, size uint64, err error) {

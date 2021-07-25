@@ -34,11 +34,11 @@ import (
 var databaseCreationMutex sync.Mutex
 
 type Store struct {
-	db              *gorm.DB
-	assertsDatabase *asserts.Database
-	rootStoreKey    *rsa.PrivateKey
+	db                *gorm.DB
+	assertsDatabase   *asserts.Database
+	rootStoreKey      *rsa.PrivateKey
 	genericPrivateKey *rsa.PrivateKey
-	signingDB       *assertstest.SigningDB
+	signingDB         *assertstest.SigningDB
 }
 
 func NewStore(db *gorm.DB) *Store {
@@ -65,10 +65,10 @@ func NewStore(db *gorm.DB) *Store {
 	signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
 
 	return &Store{
-		db:              db,
-		assertsDatabase: assertsDatabase,
-		rootStoreKey:    rootPrivateKey,
-		signingDB:       signingDB,
+		db:                db,
+		assertsDatabase:   assertsDatabase,
+		rootStoreKey:      rootPrivateKey,
+		signingDB:         signingDB,
 		genericPrivateKey: genericPrivateKey,
 	}
 }
@@ -91,7 +91,7 @@ func (s *Store) snapDownload(c *gin.Context) {
 	c.Writer.Write(*bytes)
 }
 
-func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry){
+func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry) {
 	var snapEntry models.SnapEntry
 	db := s.db.Where("name", snapName).Preload(clause.Associations).Find(&snapEntry)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
@@ -274,24 +274,24 @@ func (s *Store) findSnap(c *gin.Context) {
 						CreatedAt:   snapEntry.CreatedAt.String(),
 						Name:        snapEntry.Name,
 						// TODO: need to fix this properly
-						Revision:    1,
-						SnapID:      snapEntry.SnapStoreID,
-						Type: snapType,
-						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },
+						Revision:  1,
+						SnapID:    snapEntry.SnapStoreID,
+						Type:      snapType,
+						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
 					},
 				},
 				Snap: responses.StoreSnap{
 					Confinement: snapEntry.Confinement,
-					CreatedAt: snapEntry.CreatedAt.String(),
-					Name: snapEntry.Name,
+					CreatedAt:   snapEntry.CreatedAt.String(),
+					Name:        snapEntry.Name,
 					// TODO: need to fix this properly
-					Revision:    1,
-					SnapID:   snapEntry.SnapStoreID,
-					Type: snapType,
-					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName },
+					Revision:  1,
+					SnapID:    snapEntry.SnapStoreID,
+					Type:      snapType,
+					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
 				},
-				Name:     snapEntry.Name,
-				SnapID:   snapEntry.SnapStoreID,
+				Name:   snapEntry.Name,
+				SnapID: snapEntry.SnapStoreID,
 			})
 
 			return results
@@ -325,7 +325,7 @@ func (s *Store) getSnapNames(c *gin.Context) {
 
 	for _, s := range snaps {
 		catalogItems.Payload.Items = append(catalogItems.Payload.Items, responses.CatalogItem{
-			Name:    s.Name,
+			Name: s.Name,
 			// TODO: implement version
 			Version: "none provided",
 			// TODO: implement summary
@@ -333,9 +333,9 @@ func (s *Store) getSnapNames(c *gin.Context) {
 			// TODO: implement aliases
 			Aliases: nil,
 			// TODO: implement apps
-			Apps:    nil,
+			Apps: nil,
 			// TODO: implement title
-			Title:   "none provided",
+			Title: "none provided",
 		})
 	}
 
@@ -350,7 +350,7 @@ func (s *Store) getSnapNames(c *gin.Context) {
 func (s *Store) saveFileToTemp(c *gin.Context, snapFile *multipart.FileHeader) (string, string) {
 	// Generate random file name for the new uploaded file so it doesn't override the old file with same name
 	snapFileId := uuid.New().String()
-	newFileName :=  snapFileId + ".snap"
+	newFileName := snapFileId + ".snap"
 
 	// The file is received, so let's save it
 	if err := c.SaveUploadedFile(snapFile, "/tmp/"+newFileName); err != nil {
@@ -394,7 +394,7 @@ func (s *Store) authRequestIdPOST(c *gin.Context) {
 	nextAuthRequest := models.AuthRequest{}
 	database.DB.Save(&nextAuthRequest)
 
-	c.JSON(http.StatusOK, requests.RequestIDResp{RequestID:strconv.Itoa(int(nextAuthRequest.ID))})
+	c.JSON(http.StatusOK, requests.RequestIDResp{RequestID: strconv.Itoa(int(nextAuthRequest.ID))})
 }
 
 func (s *Store) authDevicePOST(c *gin.Context) {
@@ -420,11 +420,11 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			}
 
 			serialHeaders := map[string]interface{}{
-				"brand-id":  serialRequst.BrandID(),
-				"model":     serialRequst.Model(),
-				"authority-id": serialRequst.BrandID(),
-				"serial": serial,
-				"device-key": string(encodedKeyBytes),
+				"brand-id":            serialRequst.BrandID(),
+				"model":               serialRequst.Model(),
+				"authority-id":        serialRequst.BrandID(),
+				"serial":              serial,
+				"device-key":          string(encodedKeyBytes),
 				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
 				// TODO: fix this static timestamp
 				"timestamp": "2021-03-06T15:04:00Z",

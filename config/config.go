@@ -18,11 +18,11 @@ var DefaultValues = map[string]interface{}{
 	configkey.CanonicalSnapStoreURL: "https://api.snapcraft.io",
 	configkey.DebugMode:             true,
 	configkey.LogLevel:              "trace",
-	configkey.RequestLogger: false,
+	configkey.RequestLogger:         false,
 	configkey.MinioHost:             "localhost",
 	configkey.MinioSecretKey:        "password",
 	configkey.MinioAccessKey:        "user",
-	configkey.MinioSecure: false,
+	configkey.MinioSecure:           false,
 	configkey.DatabaseUsername:      "manager",
 	configkey.DatabaseDatabase:      "store",
 	configkey.DatabaseHost:          "localhost",
@@ -30,8 +30,8 @@ var DefaultValues = map[string]interface{}{
 	configkey.DatabaseSSLMode:       "disable",
 	configkey.DatabaseTimezone:      "America/New_York",
 	configkey.DatabasePassword:      "password",
-	configkey.LoginPort: 8890,
-	configkey.DashboardPort: 8891,
+	configkey.LoginPort:             8890,
+	configkey.DashboardPort:         8891,
 }
 
 func LoadConfig() {
@@ -69,7 +69,7 @@ func LoadConfig() {
 	}
 }
 
-func MustGetString(key string) string{
+func MustGetString(key string) string {
 	val := viper.GetString(key)
 	if len(val) == 0 {
 		panic(errors.New("failed to get " + key))

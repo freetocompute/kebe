@@ -136,7 +136,7 @@ type Unscanned struct {
 }
 
 type Upload struct {
-	Success bool
+	Success          bool
 	StatusDetailsURL string `json:"status_details_url"`
 }
 

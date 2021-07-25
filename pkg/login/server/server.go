@@ -147,7 +147,7 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 				logrus.Error("No id_token field in oauth2 token.")
 			}
 		} else {
-			logrus.Error("Failed to exchange token: "+err.Error())
+			logrus.Error("Failed to exchange token: " + err.Error())
 		}
 	}
 

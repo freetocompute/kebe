@@ -12,15 +12,15 @@ import (
 )
 
 type SnapMeta struct {
-	Name string `yaml:"name"`
-	Version string `yaml:"version"`
-	Summary string `yaml:"summary"`
-	Description string `yaml:"description"`
-	Type string `yaml:"type"`
+	Name          string   `yaml:"name"`
+	Version       string   `yaml:"version"`
+	Summary       string   `yaml:"summary"`
+	Description   string   `yaml:"description"`
+	Type          string   `yaml:"type"`
 	Architectures []string `yaml:"architectures"`
-	Confinement string `yaml:"confinement"`
-	Grade string `yaml:"grade"`
-	Base string `yaml:"base"`
+	Confinement   string   `yaml:"confinement"`
+	Grade         string   `yaml:"grade"`
+	Base          string   `yaml:"base"`
 }
 
 // GetSnapMetaFromFile will return SnapMeta from a byte array representing a snap file

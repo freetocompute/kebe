@@ -25,11 +25,11 @@ import (
 )
 
 type Server struct {
-	engine *gin.Engine
+	engine       *gin.Engine
 	oauth2Config *oauth2.Config
-	userInfo *admind.UserInfo
-	done chan struct{}
-	port int32
+	userInfo     *admind.UserInfo
+	done         chan struct{}
+	port         int32
 }
 
 var login = &cobra.Command{
@@ -46,7 +46,7 @@ var login = &cobra.Command{
 			s.Run()
 		}()
 
-		<- s.done
+		<-s.done
 		s.Stop()
 	},
 }
@@ -82,12 +82,12 @@ func (s *Server) Init(port int32) {
 	s.oauth2Config = &oauth2.Config{
 		ClientID:     config.MustGetString(configkey.OIDCClientId),
 		ClientSecret: config.MustGetString(configkey.OIDCClientSecret),
-		Endpoint:     oauth2.Endpoint{
+		Endpoint: oauth2.Endpoint{
 			TokenURL: config.MustGetString(configkey.OIDCProviderURL) + "/protocol/openid-connect/token",
-			AuthURL: config.MustGetString(configkey.OIDCProviderURL) + "/protocol/openid-connect/auth",
+			AuthURL:  config.MustGetString(configkey.OIDCProviderURL) + "/protocol/openid-connect/auth",
 		},
-		RedirectURL:  "http://localhost:" + strconv.Itoa(int(port)) +"/callback/login",
-		Scopes:       []string{"openid", "email", "profile"},
+		RedirectURL: "http://localhost:" + strconv.Itoa(int(port)) + "/callback/login",
+		Scopes:      []string{"openid", "email", "profile"},
 	}
 }
 
@@ -132,7 +132,7 @@ func (s *Server) loginCallback(c *gin.Context) {
 
 	// TODO: use a cookie to store a session ID and we can use that to look up the user
 
-	c.Redirect(http.StatusTemporaryRedirect, "http://localhost:" + strconv.Itoa(int(s.port)))
+	c.Redirect(http.StatusTemporaryRedirect, "http://localhost:"+strconv.Itoa(int(s.port)))
 
 	go func() {
 		time.Sleep(3 * time.Second)
@@ -142,7 +142,7 @@ func (s *Server) loginCallback(c *gin.Context) {
 
 func (s *Server) login(c *gin.Context) {
 	url := s.oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	c.Redirect(http.StatusTemporaryRedirect,url)
+	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 func (s *Server) account(c *gin.Context) {

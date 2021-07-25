@@ -17,17 +17,17 @@ var databaseDatabaseVar string
 var initializationConfigPath string
 
 type AccountInit struct {
-	Id string `json:"id"`
+	Id          string `json:"id"`
 	DisplayName string `json:"display_name"`
-	Username string `json:"username"`
-	Email string `json:"email"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
 }
 
 type InitializationConfig struct {
-	AuthorityId string `json:"authority_id"`
-	RootKeyPath string `json:"root_key_path"`
-	GenericKeyPath string `json:"generic_key_path"`
-	RootAccountInit AccountInit `json:"root_account_init"`
+	AuthorityId        string      `json:"authority_id"`
+	RootKeyPath        string      `json:"root_key_path"`
+	GenericKeyPath     string      `json:"generic_key_path"`
+	RootAccountInit    AccountInit `json:"root_account_init"`
 	GenericAccountInit AccountInit `json:"generic_account_init"`
 }
 
@@ -67,8 +67,8 @@ func init() {
 }
 
 var Store = &cobra.Command{
-	Use:   "store",
-	Long:  "store",
-	Short: "store",
+	Use:              "store",
+	Long:             "store",
+	Short:            "store",
 	TraverseChildren: true,
 }

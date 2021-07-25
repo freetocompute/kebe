@@ -49,11 +49,11 @@ func refreshToken(refreshToken string) (*admind.LoginInfo, error) {
 	clientSecret := config.MustGetString(configkey.OIDCClientSecret)
 	resp, err := client.R().
 		SetFormData(map[string]string{
-			"grant_type": "refresh_token",
-			"client_id": clientId,
+			"grant_type":    "refresh_token",
+			"client_id":     clientId,
 			"refresh_token": refreshToken,
 			"client_secret": clientSecret,
-	}).
+		}).
 		Post(url)
 
 	if err != nil {
@@ -126,7 +126,7 @@ var add = &cobra.Command{
 
 		admindURL := config.MustGetString(configkey.AdminDURL)
 
-		accountURL := admindURL +  "/v1/admin/account"
+		accountURL := admindURL + "/v1/admin/account"
 
 		bytes, _ = json.Marshal(&addAccountRequest)
 		resp, err := client.R().

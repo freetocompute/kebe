@@ -41,8 +41,8 @@ import (
 
 type Server struct {
 	engine *gin.Engine
-	port int
-	db *gorm.DB
+	port   int
+	db     *gorm.DB
 }
 
 func (s *Server) Init() {
@@ -107,7 +107,7 @@ func (s *Server) postACL(c *gin.Context) {
 		panic(err)
 	}
 
-	_  = m.AddFirstPartyCaveat([]byte(bodyString))
+	_ = m.AddFirstPartyCaveat([]byte(bodyString))
 
 	ser, _ := auth.MacaroonSerialize(m)
 	mac := &dashboardResponses.Macaroon{Macaroon: ser}
@@ -125,15 +125,15 @@ func (s *Server) getAccount(c *gin.Context) {
 
 		if ok {
 			accountInfoResponse := dashboardResponses.AccountInfo{
-				AccountId: account.AccountId,
-				Snaps: map[string]map[string]dashboardResponses.Snap{},
+				AccountId:   account.AccountId,
+				Snaps:       map[string]map[string]dashboardResponses.Snap{},
 				AccountKeys: []dashboardResponses.Key{},
 			}
 
 			for _, k := range accountPreloaded.Keys {
 				accountInfoResponse.AccountKeys = append(accountInfoResponse.AccountKeys, dashboardResponses.Key{
 					PublicKeySHA384: k.SHA3384,
-					Name:            k.Name	,
+					Name:            k.Name,
 				})
 			}
 
@@ -141,10 +141,10 @@ func (s *Server) getAccount(c *gin.Context) {
 			for _, s := range accountPreloaded.SnapEntries {
 				// TODO: replace with real data
 				snaps[s.Name] = dashboardResponses.Snap{
-					Status: "Approved",
-					SnapId: s.SnapStoreID,
-					Store:  "Global",
-					Since: "2016-07-04T23:37:52Z",
+					Status:  "Approved",
+					SnapId:  s.SnapStoreID,
+					Store:   "Global",
+					Since:   "2016-07-04T23:37:52Z",
 					Private: false,
 				}
 			}
@@ -177,14 +177,14 @@ func GetAccount(c *gin.Context) *models.Account {
 
 func AddRisks(db *gorm.DB, snapEntryId uint, trackId uint) {
 	// TODO: fix me
-	risks := []string{ "stable", "candidate", "beta", "edge" }
+	risks := []string{"stable", "candidate", "beta", "edge"}
 
 	// TODO: fix the need for an empty revision
 	snapRevision := models.SnapRevision{
-		SnapFilename:           "",
-		SnapEntryID:            snapEntryId,
-		SHA3_384:               "",
-		Size:                   0,
+		SnapFilename: "",
+		SnapEntryID:  snapEntryId,
+		SHA3_384:     "",
+		Size:         0,
 	}
 
 	db.Save(&snapRevision)
@@ -241,7 +241,7 @@ func (s *Server) registerSnapName(c *gin.Context) {
 			AddRisks(s.db, newSnapEntry.ID, track.ID)
 
 			c.JSON(200, &dashboardResponses.RegisterSnap{
-				Id:  newSnapEntry.SnapStoreID,
+				Id:   newSnapEntry.SnapStoreID,
 				Name: newSnapEntry.Name,
 			})
 		} else {
@@ -300,7 +300,7 @@ func (s *Server) addAccountKey(c *gin.Context) {
 
 		c.JSON(http.StatusOK, struct {
 			PublicKey string
-		} {
+		}{
 			PublicKey: ass.PublicKeyID(),
 		})
 		return
@@ -330,9 +330,9 @@ func (s *Server) pushSnap(c *gin.Context) {
 	db := s.db.Where(&models.SnapEntry{Name: pushSnap.Name}).Find(&snap)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		snapUpload := models.SnapUpload{
-			Name:     snap.Name,
-			UpDownID: pushSnap.UpDownId,
-			Filesize: uint(pushSnap.BinaryFileSize),
+			Name:        snap.Name,
+			UpDownID:    pushSnap.UpDownId,
+			Filesize:    uint(pushSnap.BinaryFileSize),
 			SnapEntryID: snap.ID,
 		}
 
@@ -353,7 +353,7 @@ func (s *Server) pushSnap(c *gin.Context) {
 		// File saved successfully. Return proper result
 		// TODO: this URL needs to be serviced by a worker thread
 		c.JSON(http.StatusAccepted, &responses.Upload{
-			Success:  true,
+			Success:          true,
 			StatusDetailsURL: config.MustGetString(configkey.DashboardURL) + "/dev/api/snap-status/" + pushSnap.UpDownId,
 		})
 
@@ -443,7 +443,7 @@ func (s *Server) getStatus(c *gin.Context) {
 				SnapEntryID:    snapUpload.SnapEntryID,
 				SHA3_384:       actualSha3,
 				SHA3384Encoded: digest,
-				Size: int64(snapUpload.Filesize),
+				Size:           int64(snapUpload.Filesize),
 			}
 
 			s.db.Save(&revision)
@@ -585,7 +585,7 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 			for _, track := range tracks {
 
 				snapTracks = append(snapTracks, &generatedResponses.TracksItems{
-					Name:           track.Name,
+					Name: track.Name,
 				})
 
 				logrus.Tracef("Getting risks for track: %s", track.Name)
@@ -606,12 +606,12 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 							channelMapItems = append(channelMapItems, &generatedResponses.ChannelMapItems{
 								Architecture: "amd64",
 								Channel:      track.Name + "/" + risk.Name,
-								Revision: int(revision.ID),
-								Progressive: &generatedResponses.Progressive{},
+								Revision:     int(revision.ID),
+								Progressive:  &generatedResponses.Progressive{},
 							})
 
 							revisions = append(revisions, &generatedResponses.RevisionsItems{
-								Architectures: []string{ "amd64" },
+								Architectures: []string{"amd64"},
 								Revision:      int(revision.ID),
 								Version:       "1",
 								Attributes:    &generatedResponses.Attributes{},
@@ -619,27 +619,27 @@ func (s *Server) getSnapChannelMap(c *gin.Context) {
 								Epoch:         &generatedResponses.Epoch{},
 								Grade:         "stable",
 								Sha3384:       revision.SHA3_384,
-								Size: int(revision.Size),
+								Size:          int(revision.Size),
 							})
 
 							channelItems = append(channelItems, &generatedResponses.ChannelsItems{
-								Name:     track.Name + "/" + risk.Name,
-								Risk:     risk.Name,
-								Track:    track.Name,
+								Name:  track.Name + "/" + risk.Name,
+								Risk:  risk.Name,
+								Track: track.Name,
 							})
 						}
 					}
 				}
 			}
 		}
-		
+
 		root.ChannelMap = channelMapItems
 		root.Revisions = revisions
 
 		root.Snap = &generatedResponses.Snap{
-			Channels:     channelItems,
-			Name:         snap.Name,
-			Tracks: snapTracks,
+			Channels: channelItems,
+			Name:     snap.Name,
+			Tracks:   snapTracks,
 		}
 
 		c.JSON(http.StatusOK, &root)
@@ -669,17 +669,17 @@ func (s *Server) verifyACL(c *gin.Context) {
 			Allowed:               true,
 			DeviceRefreshRequired: false,
 			RefreshRequired:       false,
-			Account:               &dashboardResponses.VerifyAccount{
+			Account: &dashboardResponses.VerifyAccount{
 				Email:       user.Email,
 				DisplayName: user.DisplayName,
 				OpenId:      "oid1234",
 				Verified:    true,
 			},
-			Device:                nil,
-			LastAuth:              "2016-05-26T12:53:23Z",
-			Permissions:           &[]string{ "package_access", "package_manage", "package_push", "package_register", "package_release", "package_update" },
-			SnapIds:               nil,
-			Channels:              nil,
+			Device:      nil,
+			LastAuth:    "2016-05-26T12:53:23Z",
+			Permissions: &[]string{"package_access", "package_manage", "package_push", "package_register", "package_release", "package_update"},
+			SnapIds:     nil,
+			Channels:    nil,
 		}
 
 		c.JSON(http.StatusOK, &v)

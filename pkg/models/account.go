@@ -14,8 +14,8 @@ type Key struct {
 type SSHKey struct {
 	gorm.Model
 	PublicKeyString string `gorm:"unique"`
-	AccountID        uint
-	Account          Account
+	AccountID       uint
+	Account         Account
 }
 
 type Account struct {
@@ -26,6 +26,6 @@ type Account struct {
 	Username    string `gorm:"unique"`
 	Keys        []Key
 	SnapEntries []SnapEntry
-	SSHKeys []SSHKey
-	Email 			 string
+	SSHKeys     []SSHKey
+	Email       string
 }

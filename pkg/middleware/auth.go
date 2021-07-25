@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-func VerifyAndGetUser(db *gorm.DB, authData string) (*models.Account, error){
+func VerifyAndGetUser(db *gorm.DB, authData string) (*models.Account, error) {
 	rootKey := config.MustGetString(configkey.MacaroonRootKey)
 
 	rootS, dischargeS := GetRootMacaroonsFromString(authData)

@@ -128,7 +128,7 @@ var Initialize = cobra.Command{
 		}
 		db.Save(&rootAccount)
 		rootAccountKey := models.Key{
-			Name:             "default",
+			Name: "default",
 			//TODO: get actual sha3384, is it needed?
 			SHA3384:          rootKey.PublicKey().ID(),
 			EncodedPublicKey: rootKey.PublicKey().ID(),
@@ -150,7 +150,7 @@ var Initialize = cobra.Command{
 		}
 		db.Save(&genericAccount)
 		genericAccountKey := models.Key{
-			Name:             "default",
+			Name: "default",
 			//TODO: get actual sha3384, is it needed?
 			SHA3384:          genericKey.PublicKey().ID(),
 			EncodedPublicKey: genericKey.PublicKey().ID(),

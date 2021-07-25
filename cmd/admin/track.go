@@ -26,7 +26,7 @@ func init() {
 }
 
 var track = &cobra.Command{
-	Use: "track",
+	Use:   "track",
 	Short: "track",
 }
 
@@ -65,7 +65,7 @@ var addTrack = &cobra.Command{
 
 		admindURL := config.MustGetString(configkey.AdminDURL)
 
-		trackURL := admindURL +  "/v1/admin/track"
+		trackURL := admindURL + "/v1/admin/track"
 
 		bytes, _ = json.Marshal(&addTrackReq)
 		resp, err := client.R().
@@ -77,7 +77,7 @@ var addTrack = &cobra.Command{
 			panic(err)
 		}
 
-		if resp.StatusCode() != 200 && resp.StatusCode() != 201  {
+		if resp.StatusCode() != 200 && resp.StatusCode() != 201 {
 			if resp.Error() != nil {
 				panic(resp.Error())
 			}

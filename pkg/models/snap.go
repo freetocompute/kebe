@@ -20,45 +20,45 @@ type SnapTrack struct {
 	Name string
 
 	SnapEntryID uint
-	SnapEntry SnapEntry
+	SnapEntry   SnapEntry
 
 	Risks []SnapRisk
 }
 
 type SnapRisk struct {
 	gorm.Model
-	Name string
+	Name        string
 	SnapTrackID uint
 	SnapEntryID uint
-	SnapEntry SnapEntry
+	SnapEntry   SnapEntry
 
 	// TODO: fix this -- currently this is monotonically incrementing across ALL revisions, it should just be a given snap
 	RevisionID uint
-	Revision SnapRevision
+	Revision   SnapRevision
 
 	Branches []SnapBranch
 }
 
 type SnapBranch struct {
 	gorm.Model
-	Name string
-	SnapRiskID uint
+	Name        string
+	SnapRiskID  uint
 	SnapEntryID uint
-	SnapEntry SnapEntry
+	SnapEntry   SnapEntry
 
 	RevisionID uint
-	Revision SnapRevision
+	Revision   SnapRevision
 }
 
 type SnapEntry struct {
 	gorm.Model
 	Name        string `json:"name"`
 	SnapStoreID string `json:"snap-id"`
-	Revisions        []SnapRevision
-	Type             string
-	Confinement      string
-	Base			 string
-	Uploads          []SnapUpload
+	Revisions   []SnapRevision
+	Type        string
+	Confinement string
+	Base        string
+	Uploads     []SnapUpload
 
 	AccountID uint
 	Account   Account
@@ -66,22 +66,22 @@ type SnapEntry struct {
 
 type SnapRevision struct {
 	gorm.Model
-	SnapFilename           string
-	SnapEntryID uint
-	SHA3_384 string
+	SnapFilename   string
+	SnapEntryID    uint
+	SHA3_384       string
 	SHA3384Encoded string `gorm:"column:sha3_384_encoded"`
-	Size     int64
+	Size           int64
 }
 
 type SnapUpload struct {
 	gorm.Model
-	Name string
+	Name     string
 	UpDownID string
 	Filesize uint
 	// Channels is a comma-separated string of channels
-	Channels string
+	Channels    string
 	SnapEntryID uint
-	SnapEntry SnapEntry
+	SnapEntry   SnapEntry
 }
 
 func (se *SnapEntry) ToStoreSnap(snapRevision *SnapRevision) (*responses.StoreSnap, error) {
@@ -110,7 +110,7 @@ func (se *SnapEntry) ToStoreSnap(snapRevision *SnapRevision) (*responses.StoreSn
 			URL:      downloadURL,
 		},
 		Confinement: se.Confinement,
-		Base: &se.Base,
+		Base:        &se.Base,
 	}
 
 	return storeSnap, nil

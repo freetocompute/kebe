@@ -21,7 +21,7 @@ func init() {
 }
 
 var Admin = &cobra.Command{
-	Use: "kebe-admin",
+	Use:              "kebe-admin",
 	TraverseChildren: true,
 }
 

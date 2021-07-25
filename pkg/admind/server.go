@@ -21,8 +21,8 @@ import (
 )
 
 type Server struct {
-	db *gorm.DB
-	engine *gin.Engine
+	db           *gorm.DB
+	engine       *gin.Engine
 	oauth2Config *oauth2.Config
 }
 
@@ -83,7 +83,7 @@ func (s *Server) verifyUser(accessToken string) (*UserInfo, error) {
 	client := resty.New()
 	url := config.MustGetString(configkey.OIDCProviderURL) + "/protocol/openid-connect/userinfo"
 	resp, err := client.R().
-		SetHeader("Authorization", "Bearer " + accessToken).
+		SetHeader("Authorization", "Bearer "+accessToken).
 		Get(url)
 
 	if err != nil {
