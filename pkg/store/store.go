@@ -4,6 +4,15 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"io"
+	"io/ioutil"
+	"mime/multipart"
+	"net/http"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
@@ -21,14 +30,6 @@ import (
 	"github.com/snapcore/snapd/snap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"io"
-	"io/ioutil"
-	"mime/multipart"
-	"net/http"
-	"path"
-	"strconv"
-	"strings"
-	"sync"
 )
 
 var databaseCreationMutex sync.Mutex
@@ -79,9 +80,7 @@ func GetDatabaseWithRootKey() *asserts.Database {
 	databaseCreationMutex.Lock()
 	defer databaseCreationMutex.Unlock()
 
-	var db *asserts.Database
-	db = GetDatabaseWithRootKeyS3(minioClient)
-	return db
+	return GetDatabaseWithRootKeyS3(minioClient)
 }
 
 func (s *Store) snapDownload(c *gin.Context) {
@@ -253,16 +252,12 @@ func (s *Store) findSnap(c *gin.Context) {
 			switch snapEntry.Type {
 			case "os":
 				snapType = snap.TypeOS
-				break
 			case "snapd":
 				snapType = snap.TypeSnapd
-				break
 			case "base":
 				snapType = snap.TypeBase
-				break
 			case "gadget":
 				snapType = snap.TypeGadget
-				break
 			case "kernel":
 				snapType = snap.TypeKernel
 			}

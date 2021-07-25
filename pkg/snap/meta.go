@@ -1,14 +1,14 @@
 package snap
 
 import (
-	"errors"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 type SnapMeta struct {
@@ -35,9 +35,8 @@ func GetSnapMetaFromFile(snapFilePath string, workingDirectory string) (*SnapMet
 }
 
 func GetSnapMetaFromBytes(bytes []byte, workingDirectory string) (*SnapMeta, error) {
-	err := errors.New("there was an error getting snap meta")
 	tmpFilePath := path.Join(workingDirectory, uuid.New().String()+".snap")
-	err = ioutil.WriteFile(tmpFilePath, bytes, 0755)
+	err := ioutil.WriteFile(tmpFilePath, bytes, 0755)
 	if err == nil {
 		defer func(name string) {
 			errIn := os.Remove(name)

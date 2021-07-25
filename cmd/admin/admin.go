@@ -2,14 +2,15 @@ package admin
 
 import (
 	"fmt"
+	"os"
+	"sort"
+
 	"github.com/freetocompute/kebe/cmd/store"
 	"github.com/freetocompute/kebe/config"
 	"github.com/olekukonko/tablewriter"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"os"
-	"sort"
 )
 
 func init() {
@@ -33,7 +34,7 @@ var info = &cobra.Command{
 		table.SetHeader([]string{"Name", "Value"})
 
 		var defaultValueKeys []string
-		for k, _ := range config.DefaultValues {
+		for k := range config.DefaultValues {
 			defaultValueKeys = append(defaultValueKeys, k)
 		}
 

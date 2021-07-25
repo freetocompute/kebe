@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"strings"
+
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
 	"github.com/freetocompute/kebe/pkg/database"
@@ -15,9 +19,6 @@ import (
 	"github.com/snapcore/snapd/asserts/assertstest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"io/ioutil"
-	"log"
-	"strings"
 )
 
 var Destroy = cobra.Command{
@@ -234,72 +235,6 @@ func deleteAllItemsInBucket(minioClient *minio.Client, bucketName string) {
 	}
 }
 
-func createGenericClassModelAssertion(signingDB *assertstest.SigningDB, keyId string, model string) *asserts.Model {
-	modelHeaders := map[string]interface{}{
-		"series":       "16",
-		"brand-id":     "generic",
-		"model":        "generic-classic",
-		"timestamp":    "2015-11-20T15:04:00Z",
-		"authority-id": "generic",
-		"classic":      "true",
-	}
-
-	a, err := signingDB.Sign(asserts.ModelType, modelHeaders, nil, keyId)
-
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	return a.(*asserts.Model)
-}
-
-func createGenericAccount(minioClient *minio.Client, rootPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	bucketName := "generic"
-	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	genericAccountKey, rsapk := crypto.CreateKeyPair(4096)
-	keyString := crypto.ExportRsaPrivateKeyAsPemStr(rsapk)
-
-	minioClient.PutObject(ctx, bucketName, "private-key.pem", strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
-
-	generateGenericAssertions(minioClient, rootPrivateKey, signingDB, genericAccountKey, ctx, bucketName)
-}
-
-func generateGenericAssertions(minioClient *minio.Client, rootPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB, genericAccountKey asserts.PrivateKey, ctx context.Context, bucketName string) {
-	signingDB.ImportKey(genericAccountKey)
-
-	accountAssertion, bytes := createAccountAssertion(signingDB, rootPrivateKey.PublicKey().ID(), "generic", "generic")
-	signingDB.Add(accountAssertion)
-
-	_, err := minioClient.PutObject(ctx, bucketName, "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	_, bytes = createAccountKeyAssertion(signingDB, genericAccountKey.PublicKey(), rootPrivateKey.PublicKey().ID(), accountAssertion, "generic")
-	_, err = minioClient.PutObject(ctx, bucketName, "account-key.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	modelAssertion := createGenericClassModelAssertion(signingDB, genericAccountKey.PublicKey().ID(), "generic")
-	bytes = asserts.Encode(modelAssertion)
-	if bytes == nil {
-		logrus.Error("bytes is nil for model assertion!")
-		return
-	}
-	_, err = minioClient.PutObject(ctx, bucketName, "model.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
-	if err != nil {
-		logrus.Error(err)
-	}
-}
-
 func createTrustedAccountExt(minioClient *minio.Client, accountKey asserts.PrivateKey, signingKeyId string, signingDB *assertstest.SigningDB,
 	accountId string, accountUsername string, bucketName string, accountKeyName string) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -318,31 +253,6 @@ func createTrustedAccountExt(minioClient *minio.Client, accountKey asserts.Priva
 	if err != nil {
 		logrus.Error(err)
 	}
-}
-
-func createPrivateKey(minioClient *minio.Client, bucketName string, keyName string, bits int) asserts.PrivateKey {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	objectCh := minioClient.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
-		Recursive: true,
-	})
-	for object := range objectCh {
-		logrus.Tracef("object: %s", object.Key)
-	}
-
-	err := minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
-	if err != nil {
-		logrus.Error(err)
-	}
-
-	aPK, rsapk := crypto.CreateKeyPair(bits)
-	keyString := crypto.ExportRsaPrivateKeyAsPemStr(rsapk)
-
-	minioClient.PutObject(ctx, bucketName, keyName, strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
-
-	return aPK
 }
 
 func createAccountKeyAssertion(signingDB *assertstest.SigningDB, publicKey asserts.PublicKey, keyId string, trustedAcct *asserts.Account, name string) (*asserts.AccountKey, []byte) {

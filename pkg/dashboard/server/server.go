@@ -8,6 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	generatedResponses "github.com/freetocompute/kebe/generated/responses"
@@ -32,11 +38,6 @@ import (
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"io"
-	"log"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 type Server struct {
@@ -555,6 +556,9 @@ func (s *Server) snapRelease(c *gin.Context) {
 					}
 				} else {
 					// TODO: we need to just create it if it didn't already exist
+					logrus.Errorf("Track %s for %s with risk %s does not exist, it needs to be created!", track.Name, snapEntry.Name, risk.Name)
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
 				}
 			}
 		}
@@ -687,5 +691,4 @@ func (s *Server) verifyACL(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)
-	return
 }

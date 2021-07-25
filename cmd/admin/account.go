@@ -3,6 +3,10 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"strconv"
+	"time"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind"
@@ -10,9 +14,6 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"io/ioutil"
-	"strconv"
-	"time"
 )
 
 var username string
@@ -81,7 +82,7 @@ func refreshToken(refreshToken string) (*admind.LoginInfo, error) {
 
 	bytes, err = json.Marshal(loginInfo)
 
-	err = ioutil.WriteFile(LoginConfigFilename, bytes, 600)
+	err = ioutil.WriteFile(LoginConfigFilename, bytes, 0600)
 	if err != nil {
 		return nil, err
 	}

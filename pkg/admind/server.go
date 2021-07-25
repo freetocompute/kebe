@@ -2,8 +2,9 @@ package admind
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"net/http"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind/requests"
@@ -12,18 +13,14 @@ import (
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/gin-gonic/gin"
-	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"golang.org/x/oauth2"
 	"gorm.io/gorm"
-	"net/http"
 )
 
 type Server struct {
-	db           *gorm.DB
-	engine       *gin.Engine
-	oauth2Config *oauth2.Config
+	db     *gorm.DB
+	engine *gin.Engine
 }
 
 func (s *Server) Init() {
@@ -75,31 +72,6 @@ func (s *Server) addAccount(c *gin.Context) {
 	}
 
 	s.db.Save(&account)
-}
-
-func (s *Server) verifyUser(accessToken string) (*UserInfo, error) {
-	var userInfo *UserInfo
-	// Create a Resty Client
-	client := resty.New()
-	url := config.MustGetString(configkey.OIDCProviderURL) + "/protocol/openid-connect/userinfo"
-	resp, err := client.R().
-		SetHeader("Authorization", "Bearer "+accessToken).
-		Get(url)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode() == 200 {
-		err = json.Unmarshal(resp.Body(), userInfo)
-		if err != nil {
-			return nil, err
-		}
-
-		return userInfo, err
-	}
-
-	return nil, errors.New("not found")
 }
 
 func (s *Server) addTrack(c *gin.Context) {

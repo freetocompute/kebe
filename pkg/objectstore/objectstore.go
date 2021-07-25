@@ -3,14 +3,15 @@ package objectstore
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
+	"path"
+
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"io"
-	"log"
-	"path"
 )
 
 type ObjectStore interface {
@@ -32,11 +33,6 @@ func (obs *Impl) GetFileFromBucket(bucket string, filePath string) (*[]byte, err
 	base := path.Base(filePath)
 
 	objectPtr, err := obs.MinioClient.GetObject(ctx, bucket, base, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	objectPtr, err = obs.MinioClient.GetObject(ctx, bucket, base, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, err
 	}

@@ -119,7 +119,7 @@ type SnapActionResult struct {
 	Result string `json:"result"`
 	// For snap
 	InstanceKey      string                `json:"instance-key"`
-	SnapID           string                `json:"snap-id,omitempy"`
+	SnapID           string                `json:"snap-id,omitempty"`
 	Name             string                `json:"name,omitempty"`
 	Snap             *StoreSnap            `json:"snap"`
 	EffectiveChannel string                `json:"effective-channel,omitempty"`
