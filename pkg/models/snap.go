@@ -58,6 +58,7 @@ type SnapEntry struct {
 	Type             string
 	Confinement      string
 	Base			 string
+	Uploads          []SnapUpload
 
 	AccountID uint
 	Account   Account
@@ -70,6 +71,17 @@ type SnapRevision struct {
 	SHA3_384 string
 	SHA3384Encoded string `gorm:"column:sha3_384_encoded"`
 	Size     int64
+}
+
+type SnapUpload struct {
+	gorm.Model
+	Name string
+	UpDownID string
+	Filesize uint
+	// Channels is a comma-separated string of channels
+	Channels string
+	SnapEntryID uint
+	SnapEntry SnapEntry
 }
 
 func (se *SnapEntry) ToStoreSnap(snapRevision *SnapRevision) (*responses.StoreSnap, error) {

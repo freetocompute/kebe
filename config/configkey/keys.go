@@ -4,6 +4,7 @@ const (
 	CanonicalSnapStoreURL = "canonical.snap.store.url"
 	LogLevel              = "log.level"
 	DebugMode             = "debug"
+	RequestLogger		  = "log.requests.enabled"
 	MinioAccessKey        = "minio.access.key"
 	MinioSecretKey        = "minio.secret.key"
 	MinioHost             = "minio.host"

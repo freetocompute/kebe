@@ -3,3 +3,8 @@ env*
 config*.yaml
 .idea
 postgres_backup/
+.loginconfig
+init-config.json
+loginconfig.json
+token.json
+userinfo.json

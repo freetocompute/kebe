@@ -18,6 +18,7 @@ var DefaultValues = map[string]interface{}{
 	configkey.CanonicalSnapStoreURL: "https://api.snapcraft.io",
 	configkey.DebugMode:             true,
 	configkey.LogLevel:              "trace",
+	configkey.RequestLogger: false,
 	configkey.MinioHost:             "localhost",
 	configkey.MinioSecretKey:        "password",
 	configkey.MinioAccessKey:        "user",

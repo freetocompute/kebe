@@ -61,11 +61,10 @@ func (s *Server) Init() {
 
 	// Setup gin and routes
 	r := gin.Default()
-	if viper.GetBool(configkey.DebugMode) {
-		logrus.Info("Debug mode enabled")
+
+	if viper.GetBool(configkey.RequestLogger) {
+		logrus.Info("Request logger enabled")
 		r.Use(middleware.RequestLoggerMiddleware())
-	} else {
-		logrus.Info("Debug mode disabled")
 	}
 
 	r.NoRoute(func(c *gin.Context) {
@@ -321,6 +320,7 @@ func (s *Server) pushSnap(c *gin.Context) {
 	}
 
 	// TODO: implement xdelta3 handling
+	// TODO: while this is not supported, the unscanned bucket could become litered with xdelta3 files
 	if pushSnap.DeltaFormat != "" {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -329,22 +329,26 @@ func (s *Server) pushSnap(c *gin.Context) {
 	var snap models.SnapEntry
 	db := s.db.Where(&models.SnapEntry{Name: pushSnap.Name}).Find(&snap)
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-
-		// TODO: we can't create a revision here until we know what it's SHA is,
-		// we'll need to make this a record of its own and the resolve it
-		// when the actual upload has finished
-		rev := models.SnapRevision{
-			SnapFilename:           pushSnap.UpDownId + ".snap",
-			SnapEntryID:            snap.ID,
-			Size:                   pushSnap.BinaryFileSize,
+		snapUpload := models.SnapUpload{
+			Name:     snap.Name,
+			UpDownID: pushSnap.UpDownId,
+			Filesize: uint(pushSnap.BinaryFileSize),
+			SnapEntryID: snap.ID,
 		}
 
-		s.db.Save(&rev)
+		logrus.Infof("Uploading: %+v", snapUpload)
 
-		// Did it have channels? if so, release it
+		// TODO: fix lazy
 		if len(pushSnap.Channels) > 0 {
-			_ = s.releaseSnap(pushSnap.Channels, snap.ID, rev.ID)
+			channels := ""
+			for _, chn := range pushSnap.Channels {
+				channels = channels + "," + chn
+			}
+
+			snapUpload.Channels = channels
 		}
+
+		s.db.Save(&snapUpload)
 
 		// File saved successfully. Return proper result
 		// TODO: this URL needs to be serviced by a worker thread
@@ -359,15 +363,14 @@ func (s *Server) pushSnap(c *gin.Context) {
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
-func (s *Server) updateMeta(metaBytes *[]byte, snapId string) {
+func (s *Server) updateMeta(metaBytes *[]byte) {
 	snapMeta, err2 := snap.GetSnapMetaFromBytes(*metaBytes, "/tmp")
 	if err2 == nil {
 		logrus.Tracef("snapMeta: %+v", snapMeta)
 		var snapEntry models.SnapEntry
 		db := s.db.Where(&models.SnapEntry{Name: snapMeta.Name}).Find(&snapEntry)
-		if _, ok :=database.CheckDBForErrorOrNoRows(db); ok {
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 			snapEntry.Type = "app"
-
 			if snapMeta.Type != "" {
 				snapEntry.Type = snapMeta.Type
 			} else {
@@ -379,7 +382,7 @@ func (s *Server) updateMeta(metaBytes *[]byte, snapId string) {
 
 			s.db.Save(&snapEntry)
 		} else {
-			logrus.Errorf("No rows found for: %s", snapId)
+			logrus.Errorf("No rows found for: %s", snapMeta.Name)
 		}
 	} else {
 		logrus.Errorf("Unable to update snap meta: %s", err2)
@@ -389,49 +392,79 @@ func (s *Server) updateMeta(metaBytes *[]byte, snapId string) {
 // The id here is the up-down id generated from the upload to /unscanned-upload/
 func (s *Server) getStatus(c *gin.Context) {
 	// TODO: Do whatever we need to here and then return that it's processed, some day, (hopefully!) this will need to be async!
-	snapId := c.Param("id")
+	snapUpDownId := c.Param("id")
 
 	// We need to move the snap from the unscanned bucket to the snaps bucket
-	var rev models.SnapRevision
-	snapFileName := snapId + ".snap"
-	s.db.Where(&models.SnapRevision{SnapFilename: snapFileName}).Find(&rev)
+	var snapUpload models.SnapUpload
+	db := s.db.Where(&models.SnapUpload{UpDownID: snapUpDownId}).Find(&snapUpload)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		snapFileName := snapUpDownId + ".snap"
 
-	objStore := objectstore.NewObjectStore()
-	objStore.Move("unscanned", "snaps", snapFileName)
+		// get the sha3_384 of the file so we can figure out if it already exists as a revision
+		obj, err := objectstore.GetMinioClient().GetObject(context.Background(), "unscanned", snapFileName, minio.GetObjectOptions{})
+		if err != nil {
+			panic(err)
+		}
 
-	// get the sha3_384 from the file after we've moved it and update the revision
-	obj, err := objectstore.GetMinioClient().GetObject(context.Background(), "snaps", snapFileName, minio.GetObjectOptions{})
-	if err != nil {
-		panic(err)
+		bytes, err := io.ReadAll(obj)
+		h := crypto.SHA3_384.New()
+		if err != nil {
+			panic(err)
+		}
+		h.Write(bytes)
+		actualSha3 := fmt.Sprintf("%x", h.Sum(nil))
+
+		var revision models.SnapRevision
+		db = s.db.Where(models.SnapRevision{SHA3_384: actualSha3}).Find(&revision)
+		if _, ok = database.CheckDBForErrorOrNoRows(db); ok {
+			logrus.Infof("Revision %s found to exist for snap %s, updating channels with existing revision", actualSha3, snapUpload.Name)
+			// This revision already exists on some channel, we just
+			// need to update the requested channels to have this revision
+
+			// need to discard upload. remove record
+			// TODO: add to auditing later?
+			logrus.Infof("Removing object %s from buckect %s", snapFileName, "unscanned")
+			err2 := objectstore.GetMinioClient().RemoveObject(context.Background(), "unscanned", snapFileName, minio.RemoveObjectOptions{})
+			if err2 != nil {
+				logrus.Error(err2)
+			}
+		} else {
+			logrus.Infof("Revision %s not found to exist for snap %s, creating revision and updating channels with revision", actualSha3, snapUpload.Name)
+			objStore := objectstore.NewObjectStore()
+			objStore.Move("unscanned", "snaps", snapFileName)
+
+			digest, _, err2 := sha.SnapFileSHA3_384FromReader(bytes2.NewReader(bytes))
+			if err2 != nil {
+				panic(err2)
+			}
+
+			revision = models.SnapRevision{
+				SnapFilename:   snapFileName,
+				SnapEntryID:    snapUpload.SnapEntryID,
+				SHA3_384:       actualSha3,
+				SHA3384Encoded: digest,
+				Size: int64(snapUpload.Filesize),
+			}
+
+			s.db.Save(&revision)
+
+			s.updateMeta(&bytes)
+		}
+
+		// TODO: fix lazy
+		channels := strings.Split(snapUpload.Channels, ",")
+		s.releaseSnap(channels, snapUpload.SnapEntryID, revision.ID)
+
+		c.JSON(http.StatusOK, &dashboardResponses.Status{
+			Processed: true,
+			Code:      "ready_to_release",
+			Revision:  int(revision.ID),
+		})
+
+		return
 	}
 
-	bytes, err := io.ReadAll(obj)
-
-	h := crypto.SHA3_384.New()
-	if err != nil {
-		panic(err)
-	}
-	h.Write(bytes)
-	actualSha3 := fmt.Sprintf("%x", h.Sum(nil))
-
-	// TODO: don't add a revision to a channel if one already exists that is this file
-	digest, _, err := sha.SnapFileSHA3_384FromReader(bytes2.NewReader(bytes))
-	if err != nil {
-		panic(err)
-	}
-
-	rev.SHA3_384 = actualSha3
-	rev.SHA3384Encoded = digest
-
-	s.db.Save(&rev)
-
-	s.updateMeta(&bytes, snapId)
-
-	c.JSON(http.StatusOK, &dashboardResponses.Status{
-		Processed: true,
-		Code:      "ready_to_release",
-		Revision: int(rev.ID),
-	})
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Server) releaseSnap(channels []string, snapEntryId uint, revisionId uint) error {

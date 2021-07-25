@@ -376,8 +376,6 @@ func (s *Store) unscannedUpload(c *gin.Context) {
 
 	snapFileName, id := s.saveFileToTemp(c, snapFileData)
 
-	// TODO: create an "unscanned upload" table, store info about the upload there (like sha3-384 and base64 encoded values)
-
 	// TODO: create "unscanned" bucket if it doesn't exist
 	objStore := objectstore.NewObjectStore()
 	err = objStore.SaveFileToBucket("unscanned", path.Join("/", "tmp", snapFileName))
@@ -428,6 +426,7 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 				"serial": serial,
 				"device-key": string(encodedKeyBytes),
 				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
+				// TODO: fix this static timestamp
 				"timestamp": "2021-03-06T15:04:00Z",
 			}
 
@@ -456,6 +455,7 @@ func (s *Store) authNonce(c *gin.Context) {
 }
 
 func (s *Store) authSession(c *gin.Context) {
+	// TODO: implement actual sessions?
 	c.JSON(http.StatusOK, &responses.Session{Macaroon: "12345-678-9101112"})
 }
 
