@@ -2,6 +2,8 @@ package store
 
 import (
 	"encoding/base64"
+	"net/http"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
@@ -12,7 +14,6 @@ import (
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
 	"gorm.io/gorm/clause"
-	"net/http"
 )
 
 func (s *Store) getSnapRevisionAssertion(c *gin.Context) {
@@ -50,7 +51,12 @@ func (s *Store) getSnapRevisionAssertion(c *gin.Context) {
 
 		writer.Header().Set("Content-Type", asserts.MediaType)
 		writer.WriteHeader(200)
-		writer.Write(asserts.Encode(assertion))
+		_, err = writer.Write(asserts.Encode(assertion))
+		if err != nil {
+			logrus.Error(err)
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
 		return
 	}
 
@@ -80,8 +86,15 @@ func (s *Store) getSnapDeclarationAssertion(c *gin.Context) {
 		logrus.Trace(string(encodedAssertion))
 
 		writer.Header().Set("Content-Type", asserts.MediaType)
-		writer.WriteHeader(200)
-		writer.Write(asserts.Encode(aaa))
+
+		_, err = writer.Write(asserts.Encode(aaa))
+		if err == nil {
+			writer.WriteHeader(200)
+			return
+		}
+
+		logrus.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
@@ -105,7 +118,11 @@ func (s *Store) getAccountAssertion(c *gin.Context) {
 		writer.WriteHeader(200)
 
 		logrus.Trace(string(bytes))
-		writer.Write(bytes)
+		_, err := writer.Write(bytes)
+		if err != nil {
+			logrus.Error(err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+		}
 		return
 	}
 }
@@ -149,7 +166,11 @@ func (s *Store) getAccountKey(c *gin.Context) {
 			writer.WriteHeader(200)
 			assertionBytes := asserts.Encode(trustedAccKey)
 			logrus.Trace(string(assertionBytes))
-			writer.Write(assertionBytes)
+			_, err = writer.Write(assertionBytes)
+			if err != nil {
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 			return
 		}
 	}

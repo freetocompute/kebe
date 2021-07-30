@@ -4,8 +4,11 @@ import (
 	"crypto"
 	"encoding/base64"
 	"fmt"
-	"github.com/snapcore/snapd/osutil"
 	"io"
+
+	"github.com/sirupsen/logrus"
+
+	"github.com/snapcore/snapd/osutil"
 )
 
 const (
@@ -58,11 +61,15 @@ func FileDigest(reader io.Reader, hash crypto.Hash) ([]byte, uint64, error) {
 // SnapFileSHA3_384FromReader computes the SHA3-384 digest of the given snap file.
 // It also returns its size.
 func SnapFileSHA3_384FromReader(reader io.Reader) (digest string, size uint64, err error) {
-	sha3_384Dgst, size, err := FileDigest(reader, crypto.SHA3_384)
+	sha3384dgst, size, err := FileDigest(reader, crypto.SHA3_384)
+	if err != nil {
+		logrus.Error(err)
+		return "", 0, err
+	}
 
-	sha3_384, err := EncodeDigest(crypto.SHA3_384, sha3_384Dgst)
+	sha3384, err := EncodeDigest(crypto.SHA3_384, sha3384dgst)
 	if err != nil {
 		return "", 0, fmt.Errorf("%s", "cannot encode snap")
 	}
-	return sha3_384, size, nil
+	return sha3384, size, nil
 }

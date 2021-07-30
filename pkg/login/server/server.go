@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
@@ -22,9 +26,6 @@ import (
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"io"
-	"log"
-	"net/http"
 )
 
 type Server struct {
@@ -124,7 +125,10 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 						}
 
 						dm := MustNew([]byte(dischargeKeyString), []byte(dischargeRequest.CaveatId), "remote location", macaroon.LatestVersion)
-						dm.AddFirstPartyCaveat([]byte("email=" + dischargeRequest.Email))
+						err2 := dm.AddFirstPartyCaveat([]byte("email=" + dischargeRequest.Email))
+						if err2 != nil {
+							panic(err2)
+						}
 
 						ser, err3 := auth.MacaroonSerialize(dm)
 						if err3 != nil {
@@ -138,16 +142,18 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 						fmt.Println(string(bytes))
 						c.JSON(200, mac)
 					} else {
-						c.AbortWithError(http.StatusInternalServerError, err)
+						logrus.Error(err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
 					}
 				} else {
-					logrus.Error("Failed to verify ID Token: " + err.Error())
+					logrus.Errorf("Failed to verify ID Token: %v", err)
 				}
 			} else {
 				logrus.Error("No id_token field in oauth2 token.")
 			}
 		} else {
-			logrus.Error("Failed to exchange token: " + err.Error())
+			logrus.Errorf("Failed to exchange token: %v", err)
 		}
 	}
 

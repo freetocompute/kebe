@@ -23,7 +23,7 @@ import (
 	"github.com/freetocompute/kebe/pkg/store/responses"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/minio/minio-go/v7"
+	minio "github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
@@ -63,7 +63,10 @@ func NewStore(db *gorm.DB) *Store {
 		return nil
 	}
 
-	signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
+	err = signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
+	if err != nil {
+		panic(err)
+	}
 
 	return &Store{
 		db:                db,
@@ -87,7 +90,11 @@ func (s *Store) snapDownload(c *gin.Context) {
 	snapFilename := c.Param("filename")
 	obs := objectstore.NewObjectStore()
 	bytes, _ := obs.GetFileFromBucket("snaps", snapFilename)
-	c.Writer.Write(*bytes)
+	_, err := c.Writer.Write(*bytes)
+	if err != nil {
+		logrus.Error(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+	}
 }
 
 func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry) {
@@ -226,11 +233,16 @@ func (s *Store) getSnapSections(c *gin.Context) {
 	}
 
 	bytes, err := json.Marshal(&sections)
-	if err != nil {
-		panic(err)
+	if err == nil {
+		_, err = writer.Write(bytes)
+		if err == nil {
+			c.Status(http.StatusOK)
+			return
+		}
 	}
 
-	writer.Write(bytes)
+	logrus.Error(err)
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) findSnap(c *gin.Context) {
@@ -299,7 +311,11 @@ func (s *Store) findSnap(c *gin.Context) {
 
 	c.Writer.Header().Set("Content-Type", "application/json")
 	bytes, _ := json.Marshal(&searchResult)
-	c.Writer.Write(bytes)
+	_, err2 := c.Writer.Write(bytes)
+	if err2 != nil {
+		logrus.Error(err2)
+		c.AbortWithStatus(http.StatusInternalServerError)
+	}
 }
 
 func (s *Store) getSnapNames(c *gin.Context) {
@@ -318,9 +334,9 @@ func (s *Store) getSnapNames(c *gin.Context) {
 		},
 	}
 
-	for _, s := range snaps {
+	for _, sn := range snaps {
 		catalogItems.Payload.Items = append(catalogItems.Payload.Items, responses.CatalogItem{
-			Name: s.Name,
+			Name: sn.Name,
 			// TODO: implement version
 			Version: "none provided",
 			// TODO: implement summary
@@ -335,11 +351,15 @@ func (s *Store) getSnapNames(c *gin.Context) {
 	}
 
 	bytes, err := json.Marshal(&catalogItems)
-	if err != nil {
-		panic(err)
+	if err == nil {
+		_, err2 := writer.Write(bytes)
+		if err2 == nil {
+			return
+		}
 	}
 
-	writer.Write(bytes)
+	logrus.Error(err)
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) saveFileToTemp(c *gin.Context, snapFile *multipart.FileHeader) (string, string) {
@@ -438,9 +458,16 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 
 			writer.Header().Set("Content-Type", asserts.MediaType)
 			writer.WriteHeader(200)
-			writer.Write(asserts.Encode(serialAssertion))
+			_, err2 := writer.Write(asserts.Encode(serialAssertion))
+			if err2 == nil {
+				return
+			}
+
+			logrus.Error(err2)
 		}
 	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) authNonce(c *gin.Context) {
@@ -473,6 +500,9 @@ func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, erro
 				logrus.Tracef("Assertion filename: %s", filename)
 
 				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
+				if err != nil {
+					panic(err)
+				}
 
 				assertionBytes, _ := ioutil.ReadAll(objectPtr)
 				logrus.Trace("assertion:")
@@ -481,7 +511,7 @@ func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, erro
 				if err != nil {
 					panic(err)
 				} else {
-					logrus.Tracef("assertion type: %s", assertion.Type())
+					logrus.Tracef("assertion type: %s", assertion.Type().Name)
 
 					if assertion.Type() == asserts.AccountKeyType {
 						trusted = append(trusted, assertion)
@@ -508,6 +538,9 @@ func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, erro
 
 func GetDatabaseWithRootKeyS3(minioClient *minio.Client) *asserts.Database {
 	databaseCfg, err := getDatabaseConfig(minioClient)
+	if err != nil {
+		panic(err)
+	}
 
 	db, err := asserts.OpenDatabase(databaseCfg)
 	if err != nil {
@@ -525,17 +558,23 @@ func GetDatabaseWithRootKeyS3(minioClient *minio.Client) *asserts.Database {
 		})
 		for object := range objectCh {
 			if strings.Contains(object.Key, "pem") {
-				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
+				objectPtr, err2 := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
+				if err2 != nil {
+					panic(err2)
+				}
 				bytes, _ := ioutil.ReadAll(objectPtr)
 
-				rsaPK, err := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-				if err != nil {
+				rsaPK, err2 := crypto.ParseRSAPrivateKeyFromPEM(bytes)
+				if err2 != nil {
 					panic(err)
 				}
 
 				assertPK := asserts.RSAPrivateKey(rsaPK)
 
-				err = db.ImportKey(assertPK)
+				err2 = db.ImportKey(assertPK)
+				if err2 != nil {
+					panic(err)
+				}
 			}
 		}
 	}

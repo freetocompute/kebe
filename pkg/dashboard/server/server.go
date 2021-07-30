@@ -204,54 +204,58 @@ func AddRisks(db *gorm.DB, snapEntryId uint, trackId uint) {
 
 func (s *Server) registerSnapName(c *gin.Context) {
 	var registerSnapName dashboardRequests.RegisterSnapName
-	json.NewDecoder(c.Request.Body).Decode(&registerSnapName)
+	err := json.NewDecoder(c.Request.Body).Decode(&registerSnapName)
+	if err == nil {
+		account := GetAccount(c)
 
-	account := GetAccount(c)
+		var existingSnap models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: registerSnapName.Name}).Find(&existingSnap)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			c.AbortWithStatus(http.StatusConflict)
+		} else {
+			var newSnapEntry models.SnapEntry
 
-	var existingSnap models.SnapEntry
-	db := s.db.Where(&models.SnapEntry{Name: registerSnapName.Name}).Find(&existingSnap)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		c.AbortWithStatus(http.StatusConflict)
-	} else {
-		var newSnapEntry models.SnapEntry
-
-		isDryRun := false
-		dryRunString := c.Query("dry_run")
-		if len(dryRunString) == 0 {
-			isDryRun = false
-		}
-
-		if !isDryRun {
-			snapId := uuid.New()
-
-			newSnapEntry.SnapStoreID = snapId.String()
-			newSnapEntry.Name = registerSnapName.Name
-			newSnapEntry.AccountID = account.ID
-			newSnapEntry.Type = "app"
-
-			s.db.Save(&newSnapEntry)
-
-			// For now when we register a snap we are going to create the default tracks/risks
-			track := models.SnapTrack{
-				Name:        "latest",
-				SnapEntryID: newSnapEntry.ID,
+			isDryRun := false
+			dryRunString := c.Query("dry_run")
+			if len(dryRunString) == 0 {
+				isDryRun = false
 			}
 
-			s.db.Save(&track)
+			if !isDryRun {
+				snapId := uuid.New()
 
-			AddRisks(s.db, newSnapEntry.ID, track.ID)
+				newSnapEntry.SnapStoreID = snapId.String()
+				newSnapEntry.Name = registerSnapName.Name
+				newSnapEntry.AccountID = account.ID
+				newSnapEntry.Type = "app"
 
-			c.JSON(200, &dashboardResponses.RegisterSnap{
-				Id:   newSnapEntry.SnapStoreID,
-				Name: newSnapEntry.Name,
-			})
-		} else {
-			newSnapEntry.Name = registerSnapName.Name
-			c.JSON(200, &dashboardResponses.RegisterSnap{
-				Name: registerSnapName.Name,
-			})
+				s.db.Save(&newSnapEntry)
+
+				// For now when we register a snap we are going to create the default tracks/risks
+				track := models.SnapTrack{
+					Name:        "latest",
+					SnapEntryID: newSnapEntry.ID,
+				}
+
+				s.db.Save(&track)
+
+				AddRisks(s.db, newSnapEntry.ID, track.ID)
+
+				c.JSON(200, &dashboardResponses.RegisterSnap{
+					Id:   newSnapEntry.SnapStoreID,
+					Name: newSnapEntry.Name,
+				})
+			} else {
+				newSnapEntry.Name = registerSnapName.Name
+				c.JSON(200, &dashboardResponses.RegisterSnap{
+					Name: registerSnapName.Name,
+				})
+			}
 		}
 	}
+
+	logrus.Error(err)
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Server) addAccountKey(c *gin.Context) {
@@ -312,54 +316,57 @@ func (s *Server) addAccountKey(c *gin.Context) {
 
 func (s *Server) pushSnap(c *gin.Context) {
 	var pushSnap requests.SnapPush
-	json.NewDecoder(c.Request.Body).Decode(&pushSnap)
-
-	if pushSnap.DryRun {
-		// TODO: implement necessary checks here
-		c.Status(http.StatusAccepted)
-		return
-	}
-
-	// TODO: implement xdelta3 handling
-	// TODO: while this is not supported, the unscanned bucket could become litered with xdelta3 files
-	if pushSnap.DeltaFormat != "" {
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	var snap models.SnapEntry
-	db := s.db.Where(&models.SnapEntry{Name: pushSnap.Name}).Find(&snap)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		snapUpload := models.SnapUpload{
-			Name:        snap.Name,
-			UpDownID:    pushSnap.UpDownId,
-			Filesize:    uint(pushSnap.BinaryFileSize),
-			SnapEntryID: snap.ID,
+	err := json.NewDecoder(c.Request.Body).Decode(&pushSnap)
+	if err == nil {
+		if pushSnap.DryRun {
+			// TODO: implement necessary checks here
+			c.Status(http.StatusAccepted)
+			return
 		}
 
-		logrus.Infof("Uploading: %+v", snapUpload)
+		// TODO: implement xdelta3 handling
+		// TODO: while this is not supported, the unscanned bucket could become litered with xdelta3 files
+		if pushSnap.DeltaFormat != "" {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 
-		// TODO: fix lazy
-		if len(pushSnap.Channels) > 0 {
-			channels := ""
-			for _, chn := range pushSnap.Channels {
-				channels = channels + "," + chn
+		var snap models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: pushSnap.Name}).Find(&snap)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			snapUpload := models.SnapUpload{
+				Name:        snap.Name,
+				UpDownID:    pushSnap.UpDownId,
+				Filesize:    uint(pushSnap.BinaryFileSize),
+				SnapEntryID: snap.ID,
 			}
 
-			snapUpload.Channels = channels
+			logrus.Infof("Uploading: %+v", snapUpload)
+
+			// TODO: fix lazy
+			if len(pushSnap.Channels) > 0 {
+				channels := ""
+				for _, chn := range pushSnap.Channels {
+					channels = channels + "," + chn
+				}
+
+				snapUpload.Channels = channels
+			}
+
+			s.db.Save(&snapUpload)
+
+			// File saved successfully. Return proper result
+			// TODO: this URL needs to be serviced by a worker thread
+			c.JSON(http.StatusAccepted, &responses.Upload{
+				Success:          true,
+				StatusDetailsURL: config.MustGetString(configkey.DashboardURL) + "/dev/api/snap-status/" + pushSnap.UpDownId,
+			})
+
+			return
 		}
-
-		s.db.Save(&snapUpload)
-
-		// File saved successfully. Return proper result
-		// TODO: this URL needs to be serviced by a worker thread
-		c.JSON(http.StatusAccepted, &responses.Upload{
-			Success:          true,
-			StatusDetailsURL: config.MustGetString(configkey.DashboardURL) + "/dev/api/snap-status/" + pushSnap.UpDownId,
-		})
-
-		return
 	}
+
+	logrus.Error(err)
 
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
@@ -432,7 +439,12 @@ func (s *Server) getStatus(c *gin.Context) {
 		} else {
 			logrus.Infof("Revision %s not found to exist for snap %s, creating revision and updating channels with revision", actualSha3, snapUpload.Name)
 			objStore := objectstore.NewObjectStore()
-			objStore.Move("unscanned", "snaps", snapFileName)
+			err = objStore.Move("unscanned", "snaps", snapFileName)
+			if err != nil {
+				logrus.Error(err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
 
 			digest, _, err2 := sha.SnapFileSHA3_384FromReader(bytes2.NewReader(bytes))
 			if err2 != nil {
@@ -454,15 +466,18 @@ func (s *Server) getStatus(c *gin.Context) {
 
 		// TODO: fix lazy
 		channels := strings.Split(snapUpload.Channels, ",")
-		s.releaseSnap(channels, snapUpload.SnapEntryID, revision.ID)
+		err = s.releaseSnap(channels, snapUpload.SnapEntryID, revision.ID)
+		if err == nil {
+			c.JSON(http.StatusOK, &dashboardResponses.Status{
+				Processed: true,
+				Code:      "ready_to_release",
+				Revision:  int(revision.ID),
+			})
 
-		c.JSON(http.StatusOK, &dashboardResponses.Status{
-			Processed: true,
-			Code:      "ready_to_release",
-			Revision:  int(revision.ID),
-		})
+			return
+		}
 
-		return
+		logrus.Error(err)
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)
@@ -510,61 +525,67 @@ func (s *Server) releaseSnap(channels []string, snapEntryId uint, revisionId uin
 
 func (s *Server) snapRelease(c *gin.Context) {
 	var snapRelease requests.SnapRelease
-	json.NewDecoder(c.Request.Body).Decode(&snapRelease)
+	err := json.NewDecoder(c.Request.Body).Decode(&snapRelease)
+	if err == nil {
+		var snapEntry models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: snapRelease.Name}).Find(&snapEntry)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 
-	var snapEntry models.SnapEntry
-	db := s.db.Where(&models.SnapEntry{Name: snapRelease.Name}).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-
-		var trackForRelease string
-		var riskForRelease string
-		for _, cn := range snapRelease.Channels {
-			// It's possible this comes in the form:
-			//   - single string values "edge" where the track is assumed to be "latest" there is no branch
-			//   - two values "latest/edge" where the risk is proceeded by the track
-			//   - three values "latest/edge/some_branch"
-			parts := strings.Split(cn, "/")
-			if len(parts) == 1 {
-				riskForRelease = parts[0]
-				trackForRelease = "latest"
-			} else if len(parts) == 2 {
-				trackForRelease = parts[0]
-				riskForRelease = parts[1]
-			} else if len(parts) == 3 {
-				c.AbortWithError(http.StatusInternalServerError, errors.New("branches not supported yet"))
-			}
-
-			// get all the tracks
-			var track models.SnapTrack
-			db = s.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: trackForRelease}).Find(&track)
-			if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-				// get all the risks
-				var risk models.SnapRisk
-				db = s.db.Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: riskForRelease, SnapTrackID: track.ID}).Find(&risk)
-				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-					revisionNumber, err := strconv.Atoi(snapRelease.Revision)
-					if err != nil {
-						c.AbortWithError(http.StatusInternalServerError, err)
-						return
-					}
-
-					var revision models.SnapRevision
-					db = s.db.Where("id", revisionNumber).Find(&revision)
-					if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-						risk.RevisionID = revision.ID
-						s.db.Save(&risk)
-					}
-				} else {
-					// TODO: we need to just create it if it didn't already exist
-					logrus.Errorf("Track %s for %s with risk %s does not exist, it needs to be created!", track.Name, snapEntry.Name, risk.Name)
+			var trackForRelease string
+			var riskForRelease string
+			for _, cn := range snapRelease.Channels {
+				// It's possible this comes in the form:
+				//   - single string values "edge" where the track is assumed to be "latest" there is no branch
+				//   - two values "latest/edge" where the risk is proceeded by the track
+				//   - three values "latest/edge/some_branch"
+				parts := strings.Split(cn, "/")
+				if len(parts) == 1 {
+					riskForRelease = parts[0]
+					trackForRelease = "latest"
+				} else if len(parts) == 2 {
+					trackForRelease = parts[0]
+					riskForRelease = parts[1]
+				} else if len(parts) == 3 {
+					logrus.Error(errors.New("branches not supported yet"))
 					c.AbortWithStatus(http.StatusInternalServerError)
 					return
 				}
-			}
-		}
 
-		c.JSON(http.StatusOK, &dashboardResponses.SnapRelease{Success: true})
-		return
+				// get all the tracks
+				var track models.SnapTrack
+				db = s.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: trackForRelease}).Find(&track)
+				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+					// get all the risks
+					var risk models.SnapRisk
+					db = s.db.Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: riskForRelease, SnapTrackID: track.ID}).Find(&risk)
+					if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+						revisionNumber, err := strconv.Atoi(snapRelease.Revision)
+						if err != nil {
+							logrus.Error(err)
+							c.AbortWithStatus(http.StatusInternalServerError)
+							return
+						}
+
+						var revision models.SnapRevision
+						db = s.db.Where("id", revisionNumber).Find(&revision)
+						if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+							risk.RevisionID = revision.ID
+							s.db.Save(&risk)
+						}
+					} else {
+						// TODO: we need to just create it if it didn't already exist
+						logrus.Errorf("Track %s for %s with risk %s does not exist, it needs to be created!", track.Name, snapEntry.Name, risk.Name)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
+					}
+				}
+			}
+
+			c.JSON(http.StatusOK, &dashboardResponses.SnapRelease{Success: true})
+			return
+		}
+	} else {
+		logrus.Error(err)
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)

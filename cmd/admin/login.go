@@ -4,6 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os/exec"
+	"runtime"
+	"strconv"
+	"time"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind"
@@ -14,14 +23,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/oauth2"
-	"io"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"os/exec"
-	"runtime"
-	"strconv"
-	"time"
 )
 
 type Server struct {
@@ -116,6 +117,9 @@ func (s *Server) loginCallback(c *gin.Context) {
 	}
 
 	bytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		panic(err)
+	}
 
 	var userInfo admind.UserInfo
 	_ = json.Unmarshal(bytes, &userInfo)
@@ -128,7 +132,10 @@ func (s *Server) loginCallback(c *gin.Context) {
 	}
 
 	loginInfoBytes, _ := json.Marshal(&loginInfo)
-	ioutil.WriteFile(LoginConfigFilename, loginInfoBytes, 0600)
+	err2 := ioutil.WriteFile(LoginConfigFilename, loginInfoBytes, 0600)
+	if err2 != nil {
+		panic(err)
+	}
 
 	// TODO: use a cookie to store a session ID and we can use that to look up the user
 

@@ -11,7 +11,7 @@ import (
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind"
 	"github.com/freetocompute/kebe/pkg/admind/requests"
-	"github.com/go-resty/resty/v2"
+	resty "github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
 )
@@ -70,7 +70,10 @@ func refreshToken(refreshToken string) (*admind.LoginInfo, error) {
 
 	// We we read the token from the token URL it's unmodified by the oauth2 client
 	var token admind.Token
-	json.Unmarshal(resp.Body(), &token)
+	err2 := json.Unmarshal(resp.Body(), &token)
+	if err2 != nil {
+		return nil, err2
+	}
 
 	expiresIn := time.Duration(token.ExpiresIn) * time.Second
 	loginInfo.Token = oauth2.Token{
@@ -81,6 +84,9 @@ func refreshToken(refreshToken string) (*admind.LoginInfo, error) {
 	}
 
 	bytes, err = json.Marshal(loginInfo)
+	if err != nil {
+		panic(err)
+	}
 
 	err = ioutil.WriteFile(LoginConfigFilename, bytes, 0600)
 	if err != nil {

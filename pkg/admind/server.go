@@ -61,40 +61,50 @@ func (s *Server) Run() {
 
 func (s *Server) addAccount(c *gin.Context) {
 	var addAccountReq requests.AddAccount
-	json.NewDecoder(c.Request.Body).Decode(&addAccountReq)
+	err := json.NewDecoder(c.Request.Body).Decode(&addAccountReq)
+	if err == nil {
 
-	// TODO:: add validation
-	account := models.Account{
-		AccountId:   addAccountReq.AcccountId,
-		DisplayName: addAccountReq.DisplayName,
-		Username:    addAccountReq.Username,
-		Email:       addAccountReq.Email,
-	}
-
-	s.db.Save(&account)
-}
-
-func (s *Server) addTrack(c *gin.Context) {
-	var addTrackReq requests.AddTrack
-	json.NewDecoder(c.Request.Body).Decode(&addTrackReq)
-
-	logrus.Tracef("requests.AddTrack: %+v", addTrackReq)
-
-	var snapEntry models.SnapEntry
-	db := s.db.Where(&models.SnapEntry{Name: addTrackReq.SnapName}).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		track := models.SnapTrack{
-			Name:        addTrackReq.TrackName,
-			SnapEntryID: snapEntry.ID,
+		// TODO:: add validation
+		account := models.Account{
+			AccountId:   addAccountReq.AcccountId,
+			DisplayName: addAccountReq.DisplayName,
+			Username:    addAccountReq.Username,
+			Email:       addAccountReq.Email,
 		}
 
-		s.db.Save(&track)
-
-		server.AddRisks(s.db, snapEntry.ID, track.ID)
+		s.db.Save(&account)
 
 		c.Status(http.StatusCreated)
 		return
 	}
 
+	logrus.Error(err)
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) addTrack(c *gin.Context) {
+	var addTrackReq requests.AddTrack
+	err := json.NewDecoder(c.Request.Body).Decode(&addTrackReq)
+	if err == nil {
+
+		logrus.Tracef("requests.AddTrack: %+v", addTrackReq)
+
+		var snapEntry models.SnapEntry
+		db := s.db.Where(&models.SnapEntry{Name: addTrackReq.SnapName}).Find(&snapEntry)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			track := models.SnapTrack{
+				Name:        addTrackReq.TrackName,
+				SnapEntryID: snapEntry.ID,
+			}
+
+			s.db.Save(&track)
+
+			server.AddRisks(s.db, snapEntry.ID, track.ID)
+
+			c.Status(http.StatusCreated)
+			return
+		}
+	}
+	logrus.Error(err)
 	c.AbortWithStatus(http.StatusInternalServerError)
 }

@@ -187,7 +187,10 @@ func makeBucketAndAddKey(minioClient *minio.Client, bucketName string, keyPath s
 	rootPrivateKey, _ := crypto.ParseRSAPrivateKeyFromPEM(bytes)
 	keyString := crypto.ExportRsaPrivateKeyAsPemStr(rootPrivateKey)
 
-	minioClient.PutObject(ctx, bucketName, keyName, strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
+	_, err = minioClient.PutObject(ctx, bucketName, keyName, strings.NewReader(keyString), int64(len(keyString)), minio.PutObjectOptions{})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func getMinioClient() *minio.Client {
@@ -241,9 +244,12 @@ func createTrustedAccountExt(minioClient *minio.Client, accountKey asserts.Priva
 	defer cancel()
 
 	accountAssertion, bytes := createAccountAssertion(signingDB, signingKeyId, accountId, accountUsername)
-	signingDB.Add(accountAssertion)
+	err := signingDB.Add(accountAssertion)
+	if err != nil {
+		panic(err)
+	}
 
-	_, err := minioClient.PutObject(ctx, bucketName, "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
+	_, err = minioClient.PutObject(ctx, bucketName, "account.assertion", strings.NewReader(string(bytes)), int64(len(bytes)), minio.PutObjectOptions{})
 	if err != nil {
 		logrus.Error(err)
 	}

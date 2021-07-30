@@ -3,15 +3,16 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"strconv"
+	"time"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind"
 	"github.com/freetocompute/kebe/pkg/admind/requests"
-	"github.com/go-resty/resty/v2"
+	resty "github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
-	"io/ioutil"
-	"strconv"
-	"time"
 )
 
 var snapName string
