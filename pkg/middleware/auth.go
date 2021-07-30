@@ -3,20 +3,19 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/auth"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
-	"net/http"
-	"strings"
 )
 
-func VerifyAndGetUser(db *gorm.DB, authData string) (*models.Account, error) {
+func VerifyAndGetEmail(authData string) (*string, error) {
 	rootKey := config.MustGetString(configkey.MacaroonRootKey)
 
 	rootS, dischargeS := GetRootMacaroonsFromString(authData)
@@ -54,11 +53,12 @@ func VerifyAndGetUser(db *gorm.DB, authData string) (*models.Account, error) {
 				}
 
 				// find an account for this discharge token
-				var userAccount models.Account
-				db := db.Where(&models.Account{Email: email}).Find(&userAccount)
-				if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-					return &userAccount, nil
-				}
+				//var userAccount models.Account
+				//db := db.Where(&models.Account{Email: email}).Find(&userAccount)
+				//if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+				//	return &userAccount, nil
+				//}
+				return &email, nil
 			}
 		}
 	}
@@ -105,14 +105,9 @@ func CheckForAuthorizedUserWithMacaroons(db *gorm.DB, rootKey string) gin.Handle
 						}
 					}
 
-					// find an account for this discharge token
-					var userAccount models.Account
-					db := db.Where(&models.Account{Email: email}).Find(&userAccount)
-					if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-						c.Set("account", &userAccount)
-						c.Next()
-						return
-					}
+					c.Set("email", email)
+					c.Next()
+					return
 				}
 			}
 		}

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/freetocompute/kebe/pkg/repositories"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/admind/requests"
-	"github.com/freetocompute/kebe/pkg/dashboard/server"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/models"
@@ -21,6 +22,7 @@ import (
 type Server struct {
 	db     *gorm.DB
 	engine *gin.Engine
+	snaps  *repositories.SnapsRepository
 }
 
 func (s *Server) Init() {
@@ -50,6 +52,7 @@ func (s *Server) Init() {
 
 	db, _ := database.CreateDatabase()
 	s.db = db
+	s.snaps = repositories.NewSnapsRepository(db)
 
 	s.SetupEndpoints(r)
 }
@@ -99,7 +102,7 @@ func (s *Server) addTrack(c *gin.Context) {
 
 			s.db.Save(&track)
 
-			server.AddRisks(s.db, snapEntry.ID, track.ID)
+			s.snaps.AddDefaultRisks(snapEntry.ID, track.ID)
 
 			c.Status(http.StatusCreated)
 			return
