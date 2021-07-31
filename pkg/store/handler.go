@@ -3,6 +3,8 @@ package store
 import (
 	"errors"
 
+	"github.com/freetocompute/kebe/pkg/objectstore"
+
 	"github.com/freetocompute/kebe/pkg/store/requests"
 
 	"github.com/snapcore/snapd/snap"
@@ -18,6 +20,7 @@ type IStoreHandler interface {
 	GetSnapNames() (*responses.CatalogResults, error)
 	FindSnap(name string) (*responses.SearchV2Results, error)
 	SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error)
+	SnapDownload(snapFilename string) (*[]byte, error)
 }
 
 type Handler struct {
@@ -30,6 +33,22 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 		accts,
 		snaps,
 	}
+}
+
+func (h *Handler) SnapDownload(snapFilename string) (*[]byte, error) {
+	// TODO: make this part of construction
+	obs := objectstore.NewObjectStore()
+
+	bytes, err := obs.GetFileFromBucket("snaps", snapFilename)
+	if err == nil && bytes != nil {
+		return bytes, nil
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	logrus.Errorf("Error trying to get snap file %s for download", snapFilename)
+	return nil, errors.New("unknown error encountered while trying to get snap for download")
 }
 
 func (h *Handler) SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error) {

@@ -92,13 +92,20 @@ func GetDatabaseWithRootKey() *asserts.Database {
 
 func (s *Store) snapDownload(c *gin.Context) {
 	snapFilename := c.Param("filename")
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("snaps", snapFilename)
-	_, err := c.Writer.Write(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
+
+	bytes, err := s.handler.SnapDownload(snapFilename)
+	if err == nil && bytes != nil {
+		_, err2 := c.Writer.Write(*bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		return
 	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) snapRefresh(c *gin.Context) {
