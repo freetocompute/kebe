@@ -32,6 +32,7 @@ type ISnapsRepository interface {
 	GetTracks(snapId uint) (*[]models.SnapTrack, error)
 	GetRisks(trackId uint) (*[]models.SnapRisk, error)
 	GetRevision(id uint) (*models.SnapRevision, error)
+	GetRevisionByChannel(channel string, snapName string) (*models.SnapRevision, error)
 
 	GetSections() (*[]string, error)
 
@@ -44,6 +45,44 @@ type SnapsRepository struct {
 
 func NewSnapsRepository(db *gorm.DB) *SnapsRepository {
 	return &SnapsRepository{db: db}
+}
+
+func (sp *SnapsRepository) GetRevisionByChannel(channel string, snapName string) (*models.SnapRevision, error) {
+	snapEntry, err := sp.GetSnap(snapName, true)
+	if err == nil && snapEntry != nil {
+		channelParts := strings.Split(channel, "/")
+		var track string
+		var risk string
+		if len(channelParts) == 1 {
+			if channelParts[0] == "beta" || channelParts[0] == "edge" || channelParts[0] == "stable" || channelParts[0] == "candidate" {
+				track = "latest"
+				risk = channelParts[0]
+			} else {
+				track = channelParts[0]
+				risk = "stable"
+			}
+		} else if len(channelParts) == 2 {
+			track = channelParts[0]
+			risk = channelParts[1]
+		} else {
+			return nil, errors.New("branches not yet supported for channels")
+		}
+
+		var snapTrack models.SnapTrack
+		var snapRisk models.SnapRisk
+		db := sp.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: track}).Find(&snapTrack)
+		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+			db2 := sp.db.Preload(clause.Associations).Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: risk, SnapTrackID: snapTrack.ID}).Find(&snapRisk)
+			if _, ok2 := database.CheckDBForErrorOrNoRows(db2); ok2 {
+				return &snapRisk.Revision, nil
+			}
+		}
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	return nil, errors.New("unknown error encountered trying to find revision for snap by channel")
 }
 
 func (sp *SnapsRepository) GetSections() (*[]string, error) {

@@ -3,6 +3,8 @@ package store
 import (
 	"errors"
 
+	"github.com/freetocompute/kebe/pkg/store/requests"
+
 	"github.com/snapcore/snapd/snap"
 
 	"github.com/sirupsen/logrus"
@@ -15,6 +17,7 @@ type IStoreHandler interface {
 	GetSections() (*responses.SectionResults, error)
 	GetSnapNames() (*responses.CatalogResults, error)
 	FindSnap(name string) (*responses.SearchV2Results, error)
+	SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error)
 }
 
 type Handler struct {
@@ -29,18 +32,74 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 	}
 }
 
+func (h *Handler) SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error) {
+	var actionResults []*responses.SnapActionResult
+	for _, action := range *actions {
+		snapEntry, err := h.snaps.GetSnap(action.Name, true)
+		if err == nil && snapEntry != nil {
+			if action.Action == "download" {
+				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
+
+				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name) // //s.getRevision(action.Channel, action.Name)
+				if err2 == nil && snapRevision != nil {
+					storeSnap, err3 := snapEntry.ToStoreSnap(snapRevision)
+					if err3 == nil && storeSnap != nil {
+						actionResult := responses.SnapActionResult{
+							Result:      "download",
+							InstanceKey: "download-1",
+							SnapID:      snapEntry.SnapStoreID,
+							Name:        snapEntry.Name,
+							Snap:        storeSnap,
+						}
+
+						actionResults = append(actionResults, &actionResult)
+					}
+					logrus.Errorf("unable to process action %s for snap %s: %s", action.Action, action.Name, err3)
+				}
+			} else if action.Action == "install" {
+				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
+				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name) // //s.getRevision(action.Channel, action.Name)
+				if err2 == nil && snapRevision != nil {
+					storeSnap, err3 := snapEntry.ToStoreSnap(snapRevision)
+					if err3 == nil && storeSnap != nil {
+						// TODO: this shouldn't be a fixed architecture
+						storeSnap.Architectures = []string{"amd64"}
+						storeSnap.Confinement = snapEntry.Confinement
+
+						actionResult := responses.SnapActionResult{
+							Result:      "install",
+							InstanceKey: "install-1",
+							SnapID:      snapEntry.SnapStoreID,
+							Name:        snapEntry.Name,
+							Snap:        storeSnap,
+						}
+
+						actionResults = append(actionResults, &actionResult)
+					}
+				}
+			}
+		} else if err != nil {
+			logrus.Error(err)
+		} else {
+			logrus.Errorf("cannot process action %s for %s, snap unknown", action.Action, action.Name)
+		}
+	}
+
+	actionResultList := responses.SnapActionResultList{
+		Results:   actionResults,
+		ErrorList: nil,
+	}
+
+	return &actionResultList, nil
+}
+
 func (h *Handler) FindSnap(name string) (*responses.SearchV2Results, error) {
-	//var snapEntry models.SnapEntry
-	//
 	searchResult := responses.SearchV2Results{
 		ErrorList: nil,
 	}
 
 	snapEntry, err := h.snaps.GetSnap(name, true)
 	if err == nil && snapEntry != nil {
-
-		//db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
-		//if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		results := func() []responses.StoreSearchResult {
 			var results []responses.StoreSearchResult
 
@@ -90,16 +149,6 @@ func (h *Handler) FindSnap(name string) (*responses.SearchV2Results, error) {
 
 		searchResult.Results = results
 		return &searchResult, nil
-		//
-		//logrus.Infof("%+v", searchResult)
-		//
-		//c.Writer.Header().Set("Content-Type", "application/json")
-		//bytes, _ := json.Marshal(&searchResult)
-		//_, err2 := c.Writer.Write(bytes)
-		//if err2 != nil {
-		//	logrus.Error(err2)
-		//	c.AbortWithStatus(http.StatusInternalServerError)
-		//}
 	} else if err != nil {
 		logrus.Error(err)
 		return nil, err

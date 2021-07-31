@@ -30,7 +30,6 @@ import (
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var databaseCreationMutex sync.Mutex
@@ -102,42 +101,6 @@ func (s *Store) snapDownload(c *gin.Context) {
 	}
 }
 
-func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry) {
-	var snapEntry models.SnapEntry
-	db := s.db.Where("name", snapName).Preload(clause.Associations).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		channelParts := strings.Split(channel, "/")
-		var track string
-		var risk string
-		if len(channelParts) == 1 {
-			if channelParts[0] == "beta" || channelParts[0] == "edge" || channelParts[0] == "stable" || channelParts[0] == "candidate" {
-				track = "latest"
-				risk = channelParts[0]
-			} else {
-				track = channelParts[0]
-				risk = "stable"
-			}
-		} else if len(channelParts) == 2 {
-			track = channelParts[0]
-			risk = channelParts[1]
-		} else {
-			return nil, nil
-		}
-		var snapTrack models.SnapTrack
-		var snapRisk models.SnapRisk
-		//var snapRevision models.SnapRevision
-		db := s.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: track}).Find(&snapTrack)
-		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-			db := s.db.Preload(clause.Associations).Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: risk, SnapTrackID: snapTrack.ID}).Find(&snapRisk)
-			if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-				return &snapRisk.Revision, &snapEntry
-			}
-		}
-	}
-
-	return nil, nil
-}
-
 func (s *Store) snapRefresh(c *gin.Context) {
 	request := c.Request
 	writer := c.Writer
@@ -152,76 +115,17 @@ func (s *Store) snapRefresh(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/json")
 
-	for _, action := range actionRequest.Actions {
-		var snapEntry models.SnapEntry
-		db := s.db.Where("name", action.Name).Preload(clause.Associations).Preload("Revisions").Preload("Account").Find(&snapEntry)
-		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-			if action.Action == "download" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-
-				snapRevision, _ := s.getRevision(action.Channel, action.Name)
-				if snapRevision != nil {
-					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
-					if err != nil {
-						logrus.Error(err)
-						c.AbortWithStatus(http.StatusBadRequest)
-						return
-					}
-					//
-					actionResult := responses.SnapActionResult{
-						Result:      "download",
-						InstanceKey: "download-1",
-						SnapID:      snapEntry.SnapStoreID,
-						Name:        snapEntry.Name,
-						Snap:        storeSnap,
-					}
-
-					actionResultList := responses.SnapActionResultList{
-						Results: []*responses.SnapActionResult{
-							&actionResult,
-						},
-						ErrorList: nil,
-					}
-
-					c.JSON(http.StatusOK, &actionResultList)
-					return
-				}
-			} else if action.Action == "install" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-
-				snapRevision, _ := s.getRevision(action.Channel, action.Name)
-				if snapRevision != nil {
-					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
-					if err != nil {
-						logrus.Error(err)
-						c.AbortWithStatus(http.StatusBadRequest)
-						return
-					}
-
-					storeSnap.Architectures = []string{"amd64"}
-					storeSnap.Confinement = snapEntry.Confinement
-
-					actionResult := responses.SnapActionResult{
-						Result:      "install",
-						InstanceKey: "install-1",
-						SnapID:      snapEntry.SnapStoreID,
-						Name:        snapEntry.Name,
-						Snap:        storeSnap,
-					}
-
-					actionResultList := responses.SnapActionResultList{
-						Results: []*responses.SnapActionResult{
-							&actionResult,
-						},
-						ErrorList: nil,
-					}
-
-					c.JSON(http.StatusOK, &actionResultList)
-					return
-				}
-			}
-		}
+	snapActionResultList, err := s.handler.SnapRefresh(&actionRequest.Actions)
+	if err == nil && snapActionResultList != nil {
+		c.JSON(http.StatusOK, &snapActionResultList)
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered in snapRefresh")
 	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) getSnapSections(c *gin.Context) {
@@ -263,67 +167,6 @@ func (s *Store) findSnap(c *gin.Context) {
 	}
 
 	c.AbortWithStatus(http.StatusInternalServerError)
-	//db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
-	//if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-	//	results := func() []responses.StoreSearchResult {
-	//		var results []responses.StoreSearchResult
-	//
-	//		snapType := snap.TypeApp
-	//		switch snapEntry.Type {
-	//		case "os":
-	//			snapType = snap.TypeOS
-	//		case "snapd":
-	//			snapType = snap.TypeSnapd
-	//		case "base":
-	//			snapType = snap.TypeBase
-	//		case "gadget":
-	//			snapType = snap.TypeGadget
-	//		case "kernel":
-	//			snapType = snap.TypeKernel
-	//		}
-	//
-	//		results = append(results, responses.StoreSearchResult{
-	//			Revision: responses.StoreSearchChannelSnap{
-	//				StoreSnap: responses.StoreSnap{
-	//					Confinement: snapEntry.Confinement,
-	//					CreatedAt:   snapEntry.CreatedAt.String(),
-	//					Name:        snapEntry.Name,
-	//					// TODO: need to fix this properly
-	//					Revision:  1,
-	//					SnapID:    snapEntry.SnapStoreID,
-	//					Type:      snapType,
-	//					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-	//				},
-	//			},
-	//			Snap: responses.StoreSnap{
-	//				Confinement: snapEntry.Confinement,
-	//				CreatedAt:   snapEntry.CreatedAt.String(),
-	//				Name:        snapEntry.Name,
-	//				// TODO: need to fix this properly
-	//				Revision:  1,
-	//				SnapID:    snapEntry.SnapStoreID,
-	//				Type:      snapType,
-	//				Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-	//			},
-	//			Name:   snapEntry.Name,
-	//			SnapID: snapEntry.SnapStoreID,
-	//		})
-	//
-	//		return results
-	//	}()
-	//
-	//	searchResult.Results = results
-	//}
-	//
-	//logrus.Infof("%+v", searchResult)
-	//
-	//c.Writer.Header().Set("Content-Type", "application/json")
-	//bytes, _ := json.Marshal(&searchResult)
-	//_, err2 := c.Writer.Write(bytes)
-	//if err2 != nil {
-	//	logrus.Error(err2)
-	//	c.AbortWithStatus(http.StatusInternalServerError)
-	//}
 }
 
 func (s *Store) getSnapNames(c *gin.Context) {

@@ -6,10 +6,10 @@ func (s *Store) SetupEndpoints(r *gin.Engine) {
 	r.GET("/api/v1/snaps/sections", s.getSnapSections)
 	r.GET("/api/v1/snaps/names", s.getSnapNames)
 	r.GET("/v2/snaps/find", s.findSnap)
+	r.POST("/v2/snaps/refresh", s.snapRefresh)
 
 	// ----- EVERYTHING BELOW THIS LINE IS FUBAR
 
-	r.POST("/v2/snaps/refresh", s.snapRefresh)
 	r.GET("/download/snaps/:filename", s.snapDownload)
 
 	r.GET("/api/v1/snaps/assertions/snap-revision/:sha3384digest", s.getSnapRevisionAssertion)
