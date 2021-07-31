@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 
+	"gorm.io/gorm/clause"
+
 	"github.com/freetocompute/kebe/pkg/snap"
 	"github.com/sirupsen/logrus"
 
@@ -15,7 +17,7 @@ import (
 )
 
 type ISnapsRepository interface {
-	GetSnap(name string) (*models.SnapEntry, error)
+	GetSnap(name string, preloadAssociations bool) (*models.SnapEntry, error)
 	AddSnap(name string, accountId uint) (*models.SnapEntry, error)
 
 	GetRevisionBySHA(SHA3_384 string) (*models.SnapRevision, error)
@@ -215,9 +217,15 @@ func (sp *SnapsRepository) GetSnaps() (*[]models.SnapEntry, error) {
 	return nil, db.Error
 }
 
-func (sp *SnapsRepository) GetSnap(name string) (*models.SnapEntry, error) {
+func (sp *SnapsRepository) GetSnap(name string, preloadAssociations bool) (*models.SnapEntry, error) {
 	var existingSnap models.SnapEntry
-	db := sp.db.Where(&models.SnapEntry{Name: name}).Find(&existingSnap)
+	var db *gorm.DB
+	if preloadAssociations {
+		db = sp.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&existingSnap)
+	} else {
+		db = sp.db.Where(&models.SnapEntry{Name: name}).Find(&existingSnap)
+	}
+
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		return &existingSnap, nil
 	}
@@ -232,7 +240,7 @@ func (sp *SnapsRepository) GetSnap(name string) (*models.SnapEntry, error) {
 }
 
 func (sp *SnapsRepository) AddSnap(name string, accountId uint) (*models.SnapEntry, error) {
-	existingSnap, err := sp.GetSnap(name)
+	existingSnap, err := sp.GetSnap(name, false)
 	if err == nil && existingSnap != nil {
 		// when adding a snap, not finding one _is_ (!ok) what you want
 		var newSnapEntry models.SnapEntry

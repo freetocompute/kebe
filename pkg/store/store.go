@@ -29,7 +29,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
-	"github.com/snapcore/snapd/snap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -241,76 +240,90 @@ func (s *Store) getSnapSections(c *gin.Context) {
 }
 
 func (s *Store) findSnap(c *gin.Context) {
-	var snapEntry models.SnapEntry
-
-	searchResult := responses.SearchV2Results{
-		ErrorList: nil,
-	}
-
 	// TODO: implement query parameters
 	// q : search term, assume name right now
 	name := c.Query("q")
-	db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		results := func() []responses.StoreSearchResult {
-			var results []responses.StoreSearchResult
+	searchResults, err := s.handler.FindSnap(name)
+	if err == nil && searchResults != nil {
+		logrus.Infof("%+v", searchResults)
 
-			snapType := snap.TypeApp
-			switch snapEntry.Type {
-			case "os":
-				snapType = snap.TypeOS
-			case "snapd":
-				snapType = snap.TypeSnapd
-			case "base":
-				snapType = snap.TypeBase
-			case "gadget":
-				snapType = snap.TypeGadget
-			case "kernel":
-				snapType = snap.TypeKernel
-			}
+		c.Writer.Header().Set("Content-Type", "application/json")
+		bytes, _ := json.Marshal(&searchResults)
+		_, err2 := c.Writer.Write(bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+		}
 
-			results = append(results, responses.StoreSearchResult{
-				Revision: responses.StoreSearchChannelSnap{
-					StoreSnap: responses.StoreSnap{
-						Confinement: snapEntry.Confinement,
-						CreatedAt:   snapEntry.CreatedAt.String(),
-						Name:        snapEntry.Name,
-						// TODO: need to fix this properly
-						Revision:  1,
-						SnapID:    snapEntry.SnapStoreID,
-						Type:      snapType,
-						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-					},
-				},
-				Snap: responses.StoreSnap{
-					Confinement: snapEntry.Confinement,
-					CreatedAt:   snapEntry.CreatedAt.String(),
-					Name:        snapEntry.Name,
-					// TODO: need to fix this properly
-					Revision:  1,
-					SnapID:    snapEntry.SnapStoreID,
-					Type:      snapType,
-					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-				},
-				Name:   snapEntry.Name,
-				SnapID: snapEntry.SnapStoreID,
-			})
-
-			return results
-		}()
-
-		searchResult.Results = results
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered handling /v2/snaps/find in findSnap")
 	}
 
-	logrus.Infof("%+v", searchResult)
-
-	c.Writer.Header().Set("Content-Type", "application/json")
-	bytes, _ := json.Marshal(&searchResult)
-	_, err2 := c.Writer.Write(bytes)
-	if err2 != nil {
-		logrus.Error(err2)
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}
+	c.AbortWithStatus(http.StatusInternalServerError)
+	//db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
+	//if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+	//	results := func() []responses.StoreSearchResult {
+	//		var results []responses.StoreSearchResult
+	//
+	//		snapType := snap.TypeApp
+	//		switch snapEntry.Type {
+	//		case "os":
+	//			snapType = snap.TypeOS
+	//		case "snapd":
+	//			snapType = snap.TypeSnapd
+	//		case "base":
+	//			snapType = snap.TypeBase
+	//		case "gadget":
+	//			snapType = snap.TypeGadget
+	//		case "kernel":
+	//			snapType = snap.TypeKernel
+	//		}
+	//
+	//		results = append(results, responses.StoreSearchResult{
+	//			Revision: responses.StoreSearchChannelSnap{
+	//				StoreSnap: responses.StoreSnap{
+	//					Confinement: snapEntry.Confinement,
+	//					CreatedAt:   snapEntry.CreatedAt.String(),
+	//					Name:        snapEntry.Name,
+	//					// TODO: need to fix this properly
+	//					Revision:  1,
+	//					SnapID:    snapEntry.SnapStoreID,
+	//					Type:      snapType,
+	//					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
+	//				},
+	//			},
+	//			Snap: responses.StoreSnap{
+	//				Confinement: snapEntry.Confinement,
+	//				CreatedAt:   snapEntry.CreatedAt.String(),
+	//				Name:        snapEntry.Name,
+	//				// TODO: need to fix this properly
+	//				Revision:  1,
+	//				SnapID:    snapEntry.SnapStoreID,
+	//				Type:      snapType,
+	//				Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
+	//			},
+	//			Name:   snapEntry.Name,
+	//			SnapID: snapEntry.SnapStoreID,
+	//		})
+	//
+	//		return results
+	//	}()
+	//
+	//	searchResult.Results = results
+	//}
+	//
+	//logrus.Infof("%+v", searchResult)
+	//
+	//c.Writer.Header().Set("Content-Type", "application/json")
+	//bytes, _ := json.Marshal(&searchResult)
+	//_, err2 := c.Writer.Write(bytes)
+	//if err2 != nil {
+	//	logrus.Error(err2)
+	//	c.AbortWithStatus(http.StatusInternalServerError)
+	//}
 }
 
 func (s *Store) getSnapNames(c *gin.Context) {

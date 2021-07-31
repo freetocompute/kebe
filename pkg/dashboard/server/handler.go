@@ -57,7 +57,7 @@ func NewDashboardHandler(accts repositories.IAccountRepository, snaps repositori
 }
 
 func (d *DashboardHandler) GetSnapChannelMap(snapName string) (*generatedResponses.Root, error) {
-	snap, err := d.snaps.GetSnap(snapName)
+	snap, err := d.snaps.GetSnap(snapName, false)
 	if err == nil && snap != nil {
 		var root generatedResponses.Root
 		var channelMapItems []*generatedResponses.ChannelMapItems
@@ -135,7 +135,7 @@ func (d *DashboardHandler) GetSnapChannelMap(snapName string) (*generatedRespons
 
 func (d *DashboardHandler) ReleaseSnap(name string, revision uint, channels []string) (bool, error) {
 	if name != "" && revision != 0 && len(channels) > 0 {
-		snapEntry, err := d.snaps.GetSnap(name)
+		snapEntry, err := d.snaps.GetSnap(name, false)
 		if err == nil && snapEntry != nil {
 			var trackForRelease string
 			var riskForRelease string
@@ -345,7 +345,7 @@ func (d *DashboardHandler) RegisterSnapName(accountEmail string, isDryRun bool, 
 					return &resp, nil
 				}
 			} else {
-				snap, err3 := d.snaps.GetSnap(snapName)
+				snap, err3 := d.snaps.GetSnap(snapName, false)
 				if err3 == nil && snap != nil {
 					resp := responses.RegisterSnap{
 						Name: snapName,
