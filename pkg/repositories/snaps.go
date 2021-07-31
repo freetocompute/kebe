@@ -30,6 +30,10 @@ type ISnapsRepository interface {
 	GetTracks(snapId uint) (*[]models.SnapTrack, error)
 	GetRisks(trackId uint) (*[]models.SnapRisk, error)
 	GetRevision(id uint) (*models.SnapRevision, error)
+
+	GetSections() (*[]string, error)
+
+	GetSnaps() (*[]models.SnapEntry, error)
 }
 
 type SnapsRepository struct {
@@ -38,6 +42,15 @@ type SnapsRepository struct {
 
 func NewSnapsRepository(db *gorm.DB) *SnapsRepository {
 	return &SnapsRepository{db: db}
+}
+
+func (sp *SnapsRepository) GetSections() (*[]string, error) {
+	// TODO: add these to the database for real
+	sections := []string{
+		"general",
+	}
+
+	return &sections, nil
 }
 
 func (sp *SnapsRepository) GetTracks(snapId uint) (*[]models.SnapTrack, error) {
@@ -181,6 +194,24 @@ func (sp *SnapsRepository) UpdateRevision(revision *models.SnapRevision, revisio
 			return revision, nil
 		}
 	}
+	return nil, db.Error
+}
+
+func (sp *SnapsRepository) GetSnaps() (*[]models.SnapEntry, error) {
+	var snaps []models.SnapEntry
+
+	// TODO: would need to implement private and filter here
+	db := sp.db.Find(&snaps)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		return &snaps, nil
+	}
+
+	// TODO: evaluate this, we shouldn't ever really have _NO_ snaps
+	// It's not an error to find no snaps... or is it?
+	if db.Error == nil {
+		return &snaps, nil
+	}
+
 	return nil, db.Error
 }
 

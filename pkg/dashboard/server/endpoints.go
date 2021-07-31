@@ -27,8 +27,6 @@ func (s *Server) SetupEndpoints() {
 	private.POST("/snap-push", s.pushSnap)
 	private.POST("/snap-release", s.snapRelease)
 
-	//------------ BELOW THIS LINE NOT REDONE
-
 	apiV2Private := r.Group("/api/v2")
 	apiV2Private.Use(middleware.CheckForAuthorizedUserWithMacaroons(s.db, rootKey))
 	apiV2Private.GET("/snaps/:snap/channel-map", s.getSnapChannelMap)

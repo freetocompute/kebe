@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/freetocompute/kebe/pkg/repositories"
+
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
@@ -40,6 +42,7 @@ type Store struct {
 	rootStoreKey      *rsa.PrivateKey
 	genericPrivateKey *rsa.PrivateKey
 	signingDB         *assertstest.SigningDB
+	handler           IStoreHandler
 }
 
 func NewStore(db *gorm.DB) *Store {
@@ -68,12 +71,15 @@ func NewStore(db *gorm.DB) *Store {
 		panic(err)
 	}
 
+	handler := NewHandler(repositories.NewAccountRepository(db), repositories.NewSnapsRepository(db))
+
 	return &Store{
 		db:                db,
 		assertsDatabase:   assertsDatabase,
 		rootStoreKey:      rootPrivateKey,
 		signingDB:         signingDB,
 		genericPrivateKey: genericPrivateKey,
+		handler:           handler,
 	}
 }
 
@@ -224,24 +230,13 @@ func (s *Store) getSnapSections(c *gin.Context) {
 	logrus.Trace("/api/v1/snaps/sections")
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	sections := responses.SectionResults{
-		Payload: responses.Payload{
-			Sections: []responses.Section{
-				{Name: "general"},
-			},
-		},
+	result, err := s.handler.GetSections()
+	if err == nil && result != nil {
+		c.JSON(http.StatusOK, result)
+	} else if err != nil {
+		logrus.Error(err)
 	}
 
-	bytes, err := json.Marshal(&sections)
-	if err == nil {
-		_, err = writer.Write(bytes)
-		if err == nil {
-			c.Status(http.StatusOK)
-			return
-		}
-	}
-
-	logrus.Error(err)
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
@@ -324,41 +319,21 @@ func (s *Store) getSnapNames(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	var snaps []models.SnapEntry
-
-	// TODO: would need to implement private and filter here
-	s.db.Find(&snaps)
-	catalogItems := responses.CatalogResults{
-		Payload: responses.CatalogPayload{
-			Items: []responses.CatalogItem{},
-		},
-	}
-
-	for _, sn := range snaps {
-		catalogItems.Payload.Items = append(catalogItems.Payload.Items, responses.CatalogItem{
-			Name: sn.Name,
-			// TODO: implement version
-			Version: "none provided",
-			// TODO: implement summary
-			Summary: "none provided",
-			// TODO: implement aliases
-			Aliases: nil,
-			// TODO: implement apps
-			Apps: nil,
-			// TODO: implement title
-			Title: "none provided",
-		})
-	}
-
-	bytes, err := json.Marshal(&catalogItems)
-	if err == nil {
-		_, err2 := writer.Write(bytes)
-		if err2 == nil {
-			return
+	catalogItems, err := s.handler.GetSnapNames()
+	if err == nil && catalogItems != nil {
+		bytes, err := json.Marshal(catalogItems)
+		if err == nil {
+			_, err2 := writer.Write(bytes)
+			if err2 == nil {
+				return
+			}
 		}
 	}
 
-	logrus.Error(err)
+	if err != nil {
+		logrus.Error(err)
+	}
+
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
