@@ -2,7 +2,10 @@ package store
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
+
+	"github.com/snapcore/snapd/asserts/assertstest"
 
 	asserts2 "github.com/freetocompute/kebe/pkg/store/asserts"
 
@@ -31,6 +34,8 @@ type IStoreHandler interface {
 	SnapDownload(snapFilename string) (*[]byte, error)
 	GetSnapRevisionAssertion(SHA3384Encoded string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapRevision, error)
 	GetSnapDeclarationAssertion(snapId string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapDeclaration, error)
+	GetAccountKeyAssertion(keySHA3384 string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.AccountKey, error)
+	GetAccountAssertion(accountId string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.Account, error)
 }
 
 type Handler struct {
@@ -43,6 +48,58 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 		accts,
 		snaps,
 	}
+}
+
+func (h *Handler) GetAccountKeyAssertion(keySHA3384 string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.AccountKey, error) {
+	accountKey, err := h.accounts.GetKeyBySHA3384(keySHA3384)
+	if err == nil && accountKey != nil {
+		logrus.Tracef("Found account-key: %+v", accountKey)
+
+		bytes, err2 := base64.StdEncoding.DecodeString(accountKey.EncodedPublicKey)
+		if err2 != nil {
+			panic(err2)
+		}
+
+		pbk, err2 := asserts.DecodePublicKey([]byte(bytes))
+		if err2 != nil {
+			panic(err2)
+		}
+
+		trustedAcct := getTrustedAccount(accountKey.Account.AccountId, signingDB, accountKey.Account.DisplayName)
+
+		// TODO: what do do about these dates?
+		trustedAcctKeyHeaders := map[string]interface{}{
+			"since":               "2015-11-20T15:04:00Z",
+			"until":               "2500-11-20T15:04:00Z",
+			"public-key-sha3-384": accountKey.SHA3384,
+			"name":                accountKey.Name,
+		}
+		//
+		trustedAccKey := assertstest.NewAccountKey(signingDB, trustedAcct, trustedAcctKeyHeaders, pbk, "")
+		if trustedAccKey != nil {
+			return trustedAccKey, nil
+		}
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	return nil, errors.New("account key could not be found or there was an error")
+}
+
+func (h *Handler) GetAccountAssertion(accountId string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.Account, error) {
+	account, err := h.accounts.GetAccountById(accountId, false)
+	if err == nil && account != nil {
+		//
+		pk := asserts.RSAPrivateKey(rootStoreKey)
+		acct := createAccountAssertion(signingDB, pk.PublicKey().ID(), account.AccountId, account.Username)
+		return acct, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	logrus.Errorf("Unknown error, could not find account: %s", accountId)
+	return nil, errors.New("account not found")
 }
 
 func (h *Handler) GetSnapDeclarationAssertion(snapStoreId string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapDeclaration, error) {
@@ -294,4 +351,31 @@ func (h *Handler) GetSections() (*responses.SectionResults, error) {
 	}
 
 	return nil, errors.New("unknown error")
+}
+
+func createAccountAssertion(signingDB *assertstest.SigningDB, keyId string, accountId string, storeAccountUsername string) *asserts.Account {
+	trustedAcctHeaders := map[string]interface{}{
+		"validation": "certified",
+		"timestamp":  "2015-11-20T15:04:00Z",
+		"account-id": accountId,
+	}
+
+	trustedAcct := assertstest.NewAccount(signingDB, storeAccountUsername, trustedAcctHeaders, keyId)
+	return trustedAcct
+}
+
+func getTrustedAccount(accountID string, signingDB *assertstest.SigningDB, displayName string) *asserts.Account {
+	trustedAcctHeaders := map[string]interface{}{
+		"validation": "verified",
+		"timestamp":  "2015-11-20T15:04:00Z",
+	}
+
+	if displayName != "" {
+		trustedAcctHeaders["display-name"] = displayName
+	}
+
+	trustedAcctHeaders["account-id"] = accountID
+	trustedAcct := assertstest.NewAccount(signingDB, accountID, trustedAcctHeaders, "")
+
+	return trustedAcct
 }

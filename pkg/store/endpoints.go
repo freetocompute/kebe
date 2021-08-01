@@ -3,11 +3,15 @@ package store
 import "github.com/gin-gonic/gin"
 
 func (s *Store) SetupEndpoints(r *gin.Engine) {
+	r.GET("/api/v1/snaps/assertions/account/:id", s.getAccountAssertion)
+	r.GET("/api/v1/snaps/assertions/account-key/:key", s.getAccountKey)
 	r.GET("/api/v1/snaps/assertions/snap-declaration/16/:snap-id", s.getSnapDeclarationAssertion)
 	r.GET("/api/v1/snaps/assertions/snap-revision/:sha3384digest", s.getSnapRevisionAssertion)
 	r.GET("/api/v1/snaps/names", s.getSnapNames)
 	r.GET("/api/v1/snaps/sections", s.getSnapSections)
 
+	r.GET("/v2/assertions/account/:id", s.getAccountAssertion)
+	r.GET("/v2/assertions/account-key/:key", s.getAccountKey)
 	r.GET("/v2/assertions/snap-declaration/16/:snap-id", s.getSnapDeclarationAssertion)
 	r.GET("/v2/assertions/snap-revision/:sha3384digest", s.getSnapRevisionAssertion)
 	r.GET("/v2/snaps/find", s.findSnap)
@@ -16,12 +20,6 @@ func (s *Store) SetupEndpoints(r *gin.Engine) {
 	r.GET("/download/snaps/:filename", s.snapDownload)
 
 	// ----- EVERYTHING BELOW THIS LINE IS FUBAR
-	r.GET("/api/v1/snaps/assertions/account-key/:key", s.getAccountKey)
-	r.GET("/v2/assertions/account-key/:key", s.getAccountKey)
-
-	r.GET("/api/v1/snaps/assertions/account/:id", s.getAccountAssertion)
-	r.GET("/v2/assertions/account/:id", s.getAccountAssertion)
-
 	r.POST("/unscanned-upload/", s.unscannedUpload)
 
 	// auth: https://api.snapcraft.io/docs/auth.html
