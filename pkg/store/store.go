@@ -1,37 +1,22 @@
 package store
 
 import (
-	"context"
 	"crypto/rsa"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"strings"
-	"sync"
 
 	"github.com/freetocompute/kebe/pkg/store/responses"
 
-	"github.com/freetocompute/kebe/pkg/repositories"
-
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/crypto"
-	"github.com/freetocompute/kebe/pkg/objectstore"
 	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/gin-gonic/gin"
-	minio "github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
-	"gorm.io/gorm"
 )
 
-var databaseCreationMutex sync.Mutex
-
 type Store struct {
-	db                *gorm.DB
 	assertsDatabase   *asserts.Database
 	rootStoreKey      *rsa.PrivateKey
 	genericPrivateKey *rsa.PrivateKey
@@ -39,51 +24,15 @@ type Store struct {
 	handler           IStoreHandler
 }
 
-func NewStore(db *gorm.DB) *Store {
-	assertsDatabase := GetDatabaseWithRootKey()
-
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("root", "private-key.pem")
-	rootPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-
-	rootAuthorityId := config.MustGetString(configkey.RootAuthority)
-	signingDB := assertstest.NewSigningDB(rootAuthorityId, asserts.RSAPrivateKey(rootPrivateKey))
-
-	bytes, _ = obs.GetFileFromBucket("generic", "private-key.pem")
-	genericPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-
-	err = signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
-	if err != nil {
-		panic(err)
-	}
-
-	handler := NewHandler(repositories.NewAccountRepository(db), repositories.NewSnapsRepository(db))
-
+func New(handler IStoreHandler, assertsDB *asserts.Database, rootStoreKey *rsa.PrivateKey, genericPrivateKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) *Store {
 	return &Store{
-		db:                db,
-		assertsDatabase:   assertsDatabase,
-		rootStoreKey:      rootPrivateKey,
+		// db:                db,
+		assertsDatabase:   assertsDB,
+		rootStoreKey:      rootStoreKey,
 		signingDB:         signingDB,
 		genericPrivateKey: genericPrivateKey,
 		handler:           handler,
 	}
-}
-
-func GetDatabaseWithRootKey() *asserts.Database {
-	minioClient := objectstore.GetMinioClient()
-
-	databaseCreationMutex.Lock()
-	defer databaseCreationMutex.Unlock()
-
-	return GetDatabaseWithRootKeyS3(minioClient)
 }
 
 func (s *Store) snapDownload(c *gin.Context) {
@@ -273,105 +222,4 @@ func (s *Store) authSession(c *gin.Context) {
 	// TODO: implement actual sessions?
 	session := s.handler.AuthSession()
 	c.JSON(http.StatusOK, session)
-}
-
-func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {
-	var trusted []asserts.Assertion
-	var otherPredefined []asserts.Assertion
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "assertion") {
-				logrus.Tracef("Assertion key: %s", object.Key)
-				filename := object.Key
-				logrus.Tracef("Assertion filename: %s", filename)
-
-				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-				if err != nil {
-					panic(err)
-				}
-
-				assertionBytes, _ := ioutil.ReadAll(objectPtr)
-				logrus.Trace("assertion:")
-				logrus.Trace(string(assertionBytes))
-				assertion, err := asserts.Decode(assertionBytes)
-				if err != nil {
-					panic(err)
-				} else {
-					logrus.Tracef("assertion type: %s", assertion.Type().Name)
-
-					if assertion.Type() == asserts.AccountKeyType {
-						trusted = append(trusted, assertion)
-					} else if assertion.Type() == asserts.AccountType {
-						trusted = append(trusted, assertion)
-					} else {
-						otherPredefined = append(otherPredefined, assertion)
-					}
-				}
-			}
-		}
-	}
-
-	cfg := asserts.DatabaseConfig{
-		Trusted:         trusted,
-		OtherPredefined: otherPredefined,
-		Backstore:       asserts.NewMemoryBackstore(),
-		KeypairManager:  asserts.NewMemoryKeypairManager(),
-		Checkers:        nil,
-	}
-
-	return &cfg, nil
-}
-
-func GetDatabaseWithRootKeyS3(minioClient *minio.Client) *asserts.Database {
-	databaseCfg, err := getDatabaseConfig(minioClient)
-	if err != nil {
-		panic(err)
-	}
-
-	db, err := asserts.OpenDatabase(databaseCfg)
-	if err != nil {
-		panic(err)
-	}
-
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "pem") {
-				objectPtr, err2 := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-				if err2 != nil {
-					panic(err2)
-				}
-				bytes, _ := ioutil.ReadAll(objectPtr)
-
-				rsaPK, err2 := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-				if err2 != nil {
-					panic(err)
-				}
-
-				assertPK := asserts.RSAPrivateKey(rsaPK)
-
-				err2 = db.ImportKey(assertPK)
-				if err2 != nil {
-					panic(err)
-				}
-			}
-		}
-	}
-
-	return db
 }
