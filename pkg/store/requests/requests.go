@@ -1,13 +1,10 @@
 package requests
 
 import (
-	"github.com/snapcore/snapd/snap"
 	"time"
-)
 
-type RequestIDResp struct {
-	RequestID string `json:"request-id"`
-}
+	"github.com/snapcore/snapd/snap"
+)
 
 type SnapActionRequest struct {
 	Context             []*CurrentSnapV2JSON `json:"context"`

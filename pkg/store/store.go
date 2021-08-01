@@ -1,136 +1,56 @@
 package store
 
 import (
-	"context"
 	"crypto/rsa"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"path"
-	"strconv"
-	"strings"
-	"sync"
 
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/crypto"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/models"
-	"github.com/freetocompute/kebe/pkg/objectstore"
-	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/freetocompute/kebe/pkg/store/responses"
+
+	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	minio "github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
-	"github.com/snapcore/snapd/snap"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-var databaseCreationMutex sync.Mutex
-
 type Store struct {
-	db                *gorm.DB
 	assertsDatabase   *asserts.Database
 	rootStoreKey      *rsa.PrivateKey
 	genericPrivateKey *rsa.PrivateKey
 	signingDB         *assertstest.SigningDB
+	handler           IStoreHandler
 }
 
-func NewStore(db *gorm.DB) *Store {
-	assertsDatabase := GetDatabaseWithRootKey()
-
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("root", "private-key.pem")
-	rootPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-
-	rootAuthorityId := config.MustGetString(configkey.RootAuthority)
-	signingDB := assertstest.NewSigningDB(rootAuthorityId, asserts.RSAPrivateKey(rootPrivateKey))
-
-	bytes, _ = obs.GetFileFromBucket("generic", "private-key.pem")
-	genericPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-
-	err = signingDB.ImportKey(asserts.RSAPrivateKey(genericPrivateKey))
-	if err != nil {
-		panic(err)
-	}
-
+func New(handler IStoreHandler, assertsDB *asserts.Database, rootStoreKey *rsa.PrivateKey, genericPrivateKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) *Store {
 	return &Store{
-		db:                db,
-		assertsDatabase:   assertsDatabase,
-		rootStoreKey:      rootPrivateKey,
+		// db:                db,
+		assertsDatabase:   assertsDB,
+		rootStoreKey:      rootStoreKey,
 		signingDB:         signingDB,
 		genericPrivateKey: genericPrivateKey,
+		handler:           handler,
 	}
-}
-
-func GetDatabaseWithRootKey() *asserts.Database {
-	minioClient := objectstore.GetMinioClient()
-
-	databaseCreationMutex.Lock()
-	defer databaseCreationMutex.Unlock()
-
-	return GetDatabaseWithRootKeyS3(minioClient)
 }
 
 func (s *Store) snapDownload(c *gin.Context) {
 	snapFilename := c.Param("filename")
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("snaps", snapFilename)
-	_, err := c.Writer.Write(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}
-}
 
-func (s *Store) getRevision(channel string, snapName string) (*models.SnapRevision, *models.SnapEntry) {
-	var snapEntry models.SnapEntry
-	db := s.db.Where("name", snapName).Preload(clause.Associations).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		channelParts := strings.Split(channel, "/")
-		var track string
-		var risk string
-		if len(channelParts) == 1 {
-			if channelParts[0] == "beta" || channelParts[0] == "edge" || channelParts[0] == "stable" || channelParts[0] == "candidate" {
-				track = "latest"
-				risk = channelParts[0]
-			} else {
-				track = channelParts[0]
-				risk = "stable"
-			}
-		} else if len(channelParts) == 2 {
-			track = channelParts[0]
-			risk = channelParts[1]
-		} else {
-			return nil, nil
+	bytes, err := s.handler.SnapDownload(snapFilename)
+	if err == nil && bytes != nil {
+		_, err2 := c.Writer.Write(*bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
 		}
-		var snapTrack models.SnapTrack
-		var snapRisk models.SnapRisk
-		//var snapRevision models.SnapRevision
-		db := s.db.Where(&models.SnapTrack{SnapEntryID: snapEntry.ID, Name: track}).Find(&snapTrack)
-		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-			db := s.db.Preload(clause.Associations).Where(&models.SnapRisk{SnapEntryID: snapEntry.ID, Name: risk, SnapTrackID: snapTrack.ID}).Find(&snapRisk)
-			if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-				return &snapRisk.Revision, &snapEntry
-			}
-		}
+
+		return
 	}
 
-	return nil, nil
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) snapRefresh(c *gin.Context) {
@@ -147,76 +67,17 @@ func (s *Store) snapRefresh(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/json")
 
-	for _, action := range actionRequest.Actions {
-		var snapEntry models.SnapEntry
-		db := s.db.Where("name", action.Name).Preload(clause.Associations).Preload("Revisions").Preload("Account").Find(&snapEntry)
-		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-			if action.Action == "download" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-
-				snapRevision, _ := s.getRevision(action.Channel, action.Name)
-				if snapRevision != nil {
-					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
-					if err != nil {
-						logrus.Error(err)
-						c.AbortWithStatus(http.StatusBadRequest)
-						return
-					}
-					//
-					actionResult := responses.SnapActionResult{
-						Result:      "download",
-						InstanceKey: "download-1",
-						SnapID:      snapEntry.SnapStoreID,
-						Name:        snapEntry.Name,
-						Snap:        storeSnap,
-					}
-
-					actionResultList := responses.SnapActionResultList{
-						Results: []*responses.SnapActionResult{
-							&actionResult,
-						},
-						ErrorList: nil,
-					}
-
-					c.JSON(http.StatusOK, &actionResultList)
-					return
-				}
-			} else if action.Action == "install" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-
-				snapRevision, _ := s.getRevision(action.Channel, action.Name)
-				if snapRevision != nil {
-					storeSnap, err := snapEntry.ToStoreSnap(snapRevision)
-					if err != nil {
-						logrus.Error(err)
-						c.AbortWithStatus(http.StatusBadRequest)
-						return
-					}
-
-					storeSnap.Architectures = []string{"amd64"}
-					storeSnap.Confinement = snapEntry.Confinement
-
-					actionResult := responses.SnapActionResult{
-						Result:      "install",
-						InstanceKey: "install-1",
-						SnapID:      snapEntry.SnapStoreID,
-						Name:        snapEntry.Name,
-						Snap:        storeSnap,
-					}
-
-					actionResultList := responses.SnapActionResultList{
-						Results: []*responses.SnapActionResult{
-							&actionResult,
-						},
-						ErrorList: nil,
-					}
-
-					c.JSON(http.StatusOK, &actionResultList)
-					return
-				}
-			}
-		}
+	snapActionResultList, err := s.handler.SnapRefresh(&actionRequest.Actions)
+	if err == nil && snapActionResultList != nil {
+		c.JSON(http.StatusOK, &snapActionResultList)
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered in snapRefresh")
 	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) getSnapSections(c *gin.Context) {
@@ -224,98 +85,40 @@ func (s *Store) getSnapSections(c *gin.Context) {
 	logrus.Trace("/api/v1/snaps/sections")
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	sections := responses.SectionResults{
-		Payload: responses.Payload{
-			Sections: []responses.Section{
-				{Name: "general"},
-			},
-		},
+	result, err := s.handler.GetSections()
+	if err == nil && result != nil {
+		c.JSON(http.StatusOK, result)
+	} else if err != nil {
+		logrus.Error(err)
 	}
 
-	bytes, err := json.Marshal(&sections)
-	if err == nil {
-		_, err = writer.Write(bytes)
-		if err == nil {
-			c.Status(http.StatusOK)
-			return
-		}
-	}
-
-	logrus.Error(err)
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) findSnap(c *gin.Context) {
-	var snapEntry models.SnapEntry
-
-	searchResult := responses.SearchV2Results{
-		ErrorList: nil,
-	}
-
 	// TODO: implement query parameters
 	// q : search term, assume name right now
 	name := c.Query("q")
-	db := s.db.Preload(clause.Associations).Where(&models.SnapEntry{Name: name}).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		results := func() []responses.StoreSearchResult {
-			var results []responses.StoreSearchResult
+	searchResults, err := s.handler.FindSnap(name)
+	if err == nil && searchResults != nil {
+		logrus.Infof("%+v", searchResults)
 
-			snapType := snap.TypeApp
-			switch snapEntry.Type {
-			case "os":
-				snapType = snap.TypeOS
-			case "snapd":
-				snapType = snap.TypeSnapd
-			case "base":
-				snapType = snap.TypeBase
-			case "gadget":
-				snapType = snap.TypeGadget
-			case "kernel":
-				snapType = snap.TypeKernel
-			}
+		c.Writer.Header().Set("Content-Type", "application/json")
+		bytes, _ := json.Marshal(&searchResults)
+		_, err2 := c.Writer.Write(bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+		}
 
-			results = append(results, responses.StoreSearchResult{
-				Revision: responses.StoreSearchChannelSnap{
-					StoreSnap: responses.StoreSnap{
-						Confinement: snapEntry.Confinement,
-						CreatedAt:   snapEntry.CreatedAt.String(),
-						Name:        snapEntry.Name,
-						// TODO: need to fix this properly
-						Revision:  1,
-						SnapID:    snapEntry.SnapStoreID,
-						Type:      snapType,
-						Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-					},
-				},
-				Snap: responses.StoreSnap{
-					Confinement: snapEntry.Confinement,
-					CreatedAt:   snapEntry.CreatedAt.String(),
-					Name:        snapEntry.Name,
-					// TODO: need to fix this properly
-					Revision:  1,
-					SnapID:    snapEntry.SnapStoreID,
-					Type:      snapType,
-					Publisher: snap.StoreAccount{ID: snapEntry.Account.AccountId, Username: snapEntry.Account.Username, DisplayName: snapEntry.Account.DisplayName},
-				},
-				Name:   snapEntry.Name,
-				SnapID: snapEntry.SnapStoreID,
-			})
-
-			return results
-		}()
-
-		searchResult.Results = results
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered handling /v2/snaps/find in findSnap")
 	}
 
-	logrus.Infof("%+v", searchResult)
-
-	c.Writer.Header().Set("Content-Type", "application/json")
-	bytes, _ := json.Marshal(&searchResult)
-	_, err2 := c.Writer.Write(bytes)
-	if err2 != nil {
-		logrus.Error(err2)
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) getSnapNames(c *gin.Context) {
@@ -324,58 +127,22 @@ func (s *Store) getSnapNames(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	var snaps []models.SnapEntry
-
-	// TODO: would need to implement private and filter here
-	s.db.Find(&snaps)
-	catalogItems := responses.CatalogResults{
-		Payload: responses.CatalogPayload{
-			Items: []responses.CatalogItem{},
-		},
-	}
-
-	for _, sn := range snaps {
-		catalogItems.Payload.Items = append(catalogItems.Payload.Items, responses.CatalogItem{
-			Name: sn.Name,
-			// TODO: implement version
-			Version: "none provided",
-			// TODO: implement summary
-			Summary: "none provided",
-			// TODO: implement aliases
-			Aliases: nil,
-			// TODO: implement apps
-			Apps: nil,
-			// TODO: implement title
-			Title: "none provided",
-		})
-	}
-
-	bytes, err := json.Marshal(&catalogItems)
-	if err == nil {
-		_, err2 := writer.Write(bytes)
-		if err2 == nil {
-			return
+	catalogItems, err := s.handler.GetSnapNames()
+	if err == nil && catalogItems != nil {
+		bytes, err := json.Marshal(catalogItems)
+		if err == nil {
+			_, err2 := writer.Write(bytes)
+			if err2 == nil {
+				return
+			}
 		}
 	}
 
-	logrus.Error(err)
-	c.AbortWithStatus(http.StatusInternalServerError)
-}
-
-func (s *Store) saveFileToTemp(c *gin.Context, snapFile *multipart.FileHeader) (string, string) {
-	// Generate random file name for the new uploaded file so it doesn't override the old file with same name
-	snapFileId := uuid.New().String()
-	newFileName := snapFileId + ".snap"
-
-	// The file is received, so let's save it
-	if err := c.SaveUploadedFile(snapFile, "/tmp/"+newFileName); err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"message": "Unable to save the file",
-		})
-		return "", ""
+	if err != nil {
+		logrus.Error(err)
 	}
 
-	return newFileName, snapFileId
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) unscannedUpload(c *gin.Context) {
@@ -389,32 +156,28 @@ func (s *Store) unscannedUpload(c *gin.Context) {
 		return
 	}
 
-	snapFileName, id := s.saveFileToTemp(c, snapFileData)
-
-	// TODO: create "unscanned" bucket if it doesn't exist
-	objStore := objectstore.NewObjectStore()
-	err = objStore.SaveFileToBucket("unscanned", path.Join("/", "tmp", snapFileName))
-	if err != nil {
-		logrus.Error(err)
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
+	file, err := snapFileData.Open()
+	defer func(file multipart.File) {
+		err2 := file.Close()
+		if err2 != nil {
+			logrus.Error(err2)
+		}
+	}(file)
+	if err == nil {
+		id, err2 := s.handler.UnscannedUpload(file)
+		if err2 == nil && id != "" {
+			c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
+		}
 	}
-
-	c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
 }
 
 func (s *Store) authRequestIdPOST(c *gin.Context) {
-	nextAuthRequest := models.AuthRequest{}
-	database.DB.Save(&nextAuthRequest)
-
-	c.JSON(http.StatusOK, requests.RequestIDResp{RequestID: strconv.Itoa(int(nextAuthRequest.ID))})
+	resp := s.handler.AuthRequest()
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *Store) authDevicePOST(c *gin.Context) {
 	request := c.Request
-	writer := c.Writer
 	dec := asserts.NewDecoder(request.Body)
 	for {
 		got, err := dec.Decode()
@@ -422,48 +185,27 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			break
 		}
 		if err != nil { // assume broken i/o
-			// return nil, nil, retryErr(t, 0, "cannot read response to request for a serial: %v", err)
 			panic(err)
 		}
 		if got.Type() == asserts.SerialRequestType {
-			serialRequst := got.(*asserts.SerialRequest)
+			serialRequest := got.(*asserts.SerialRequest)
 
-			serial := uuid.New().String()
-			encodedKeyBytes, err := asserts.EncodePublicKey(serialRequst.DeviceKey())
-			if err != nil {
-				panic(err)
+			serialAssertion, err2 := s.handler.AuthDevice(serialRequest, asserts.RSAPrivateKey(s.genericPrivateKey), s.signingDB)
+			if err2 == nil && serialAssertion != nil {
+				encodedSerialAssertion := asserts.Encode(serialAssertion)
+				logrus.Trace("Sending serial assertion: ")
+
+				c.Writer.Header().Set("Content-Type", asserts.MediaType)
+				c.Writer.WriteHeader(200)
+				_, err3 := c.Writer.Write(encodedSerialAssertion)
+				if err3 == nil {
+					return
+				}
+
+				logrus.Error(err3)
 			}
-
-			serialHeaders := map[string]interface{}{
-				"brand-id":            serialRequst.BrandID(),
-				"model":               serialRequst.Model(),
-				"authority-id":        serialRequst.BrandID(),
-				"serial":              serial,
-				"device-key":          string(encodedKeyBytes),
-				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
-				// TODO: fix this static timestamp
-				"timestamp": "2021-03-06T15:04:00Z",
-			}
-
-			// TODO: look up actual account, get key, etc.
-			ak := asserts.RSAPrivateKey(s.genericPrivateKey)
-			serialAssertion, err := s.signingDB.Sign(asserts.SerialType, serialHeaders, nil, ak.PublicKey().ID())
-			if err != nil {
-				panic(err)
-			}
-
-			encodedSerialAssertion := asserts.Encode(serialAssertion)
-			logrus.Trace("Sending serial assertion: ")
-			logrus.Trace(string(encodedSerialAssertion))
-
-			writer.Header().Set("Content-Type", asserts.MediaType)
-			writer.WriteHeader(200)
-			_, err2 := writer.Write(asserts.Encode(serialAssertion))
-			if err2 == nil {
-				return
-			}
-
-			logrus.Error(err2)
+		} else {
+			logrus.Warningf("Assertion type included but not exepected: %s", got.Type().Name)
 		}
 	}
 
@@ -472,112 +214,12 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 
 func (s *Store) authNonce(c *gin.Context) {
 	// TODO: do we need to store this?
-	nonce := responses.Nonce{Nonce: uuid.New().String()}
+	nonce := s.handler.AuthNonce()
 	c.JSON(http.StatusOK, &nonce)
 }
 
 func (s *Store) authSession(c *gin.Context) {
 	// TODO: implement actual sessions?
-	c.JSON(http.StatusOK, &responses.Session{Macaroon: "12345-678-9101112"})
-}
-
-func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {
-	var trusted []asserts.Assertion
-	var otherPredefined []asserts.Assertion
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "assertion") {
-				logrus.Tracef("Assertion key: %s", object.Key)
-				filename := object.Key
-				logrus.Tracef("Assertion filename: %s", filename)
-
-				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-				if err != nil {
-					panic(err)
-				}
-
-				assertionBytes, _ := ioutil.ReadAll(objectPtr)
-				logrus.Trace("assertion:")
-				logrus.Trace(string(assertionBytes))
-				assertion, err := asserts.Decode(assertionBytes)
-				if err != nil {
-					panic(err)
-				} else {
-					logrus.Tracef("assertion type: %s", assertion.Type().Name)
-
-					if assertion.Type() == asserts.AccountKeyType {
-						trusted = append(trusted, assertion)
-					} else if assertion.Type() == asserts.AccountType {
-						trusted = append(trusted, assertion)
-					} else {
-						otherPredefined = append(otherPredefined, assertion)
-					}
-				}
-			}
-		}
-	}
-
-	cfg := asserts.DatabaseConfig{
-		Trusted:         trusted,
-		OtherPredefined: otherPredefined,
-		Backstore:       asserts.NewMemoryBackstore(),
-		KeypairManager:  asserts.NewMemoryKeypairManager(),
-		Checkers:        nil,
-	}
-
-	return &cfg, nil
-}
-
-func GetDatabaseWithRootKeyS3(minioClient *minio.Client) *asserts.Database {
-	databaseCfg, err := getDatabaseConfig(minioClient)
-	if err != nil {
-		panic(err)
-	}
-
-	db, err := asserts.OpenDatabase(databaseCfg)
-	if err != nil {
-		panic(err)
-	}
-
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "pem") {
-				objectPtr, err2 := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-				if err2 != nil {
-					panic(err2)
-				}
-				bytes, _ := ioutil.ReadAll(objectPtr)
-
-				rsaPK, err2 := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-				if err2 != nil {
-					panic(err)
-				}
-
-				assertPK := asserts.RSAPrivateKey(rsaPK)
-
-				err2 = db.ImportKey(assertPK)
-				if err2 != nil {
-					panic(err)
-				}
-			}
-		}
-	}
-
-	return db
+	session := s.handler.AuthSession()
+	c.JSON(http.StatusOK, session)
 }
