@@ -1,0 +1,5 @@
+FROM golang:1.16 AS builder
+
+COPY . /tmp/source
+WORKDIR /tmp/source
+RUN go build -o /bin/kebe-store bin/store/main.go

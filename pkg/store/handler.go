@@ -1,7 +1,15 @@
 package store
 
 import (
+	"crypto/rsa"
 	"errors"
+
+	asserts2 "github.com/freetocompute/kebe/pkg/store/asserts"
+
+	"github.com/freetocompute/kebe/config"
+	"github.com/freetocompute/kebe/config/configkey"
+
+	"github.com/snapcore/snapd/asserts"
 
 	"github.com/freetocompute/kebe/pkg/objectstore"
 
@@ -21,6 +29,7 @@ type IStoreHandler interface {
 	FindSnap(name string) (*responses.SearchV2Results, error)
 	SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error)
 	SnapDownload(snapFilename string) (*[]byte, error)
+	GetSnapRevisionAssertion(SHA3384Encoded string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapRevision, error)
 }
 
 type Handler struct {
@@ -33,6 +42,38 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 		accts,
 		snaps,
 	}
+}
+
+func (h *Handler) GetSnapRevisionAssertion(SHA3384Encoded string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapRevision, error) {
+	revision, err := h.snaps.GetRevisionBySHA(SHA3384Encoded, true)
+	if err == nil && revision != nil {
+		snapEntry, err2 := h.snaps.GetSnapById(revision.SnapEntryID, true)
+		logrus.Tracef("Got snap entry: %+v", snapEntry)
+
+		if err2 == nil && snapEntry != nil {
+
+			// TODO: we should get this somewhere sooner, like construction so we can MUST fail at the beginning of time
+			storeAuthorityId := config.MustGetString(configkey.RootAuthority)
+
+			// TODO: we can do better here
+			assertion, err3 := asserts2.MakeSnapRevisionAssertion(storeAuthorityId, SHA3384Encoded, snapEntry.SnapStoreID, uint64(revision.Size), int(revision.ID), snapEntry.Account.AccountId,
+				asserts.RSAPrivateKey(rootStoreKey).PublicKey().ID(), assertsDB)
+			if err3 == nil && assertion != nil {
+				return assertion, nil
+			} else if err3 != nil {
+				logrus.Error(err3)
+				return nil, err3
+			}
+		} else if err2 != nil {
+			logrus.Error(err2)
+			return nil, err2
+		}
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	return nil, errors.New("unknown error encountered while trying to get snap revision assertion")
 }
 
 func (h *Handler) SnapDownload(snapFilename string) (*[]byte, error) {
@@ -56,10 +97,11 @@ func (h *Handler) SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.S
 	for _, action := range *actions {
 		snapEntry, err := h.snaps.GetSnap(action.Name, true)
 		if err == nil && snapEntry != nil {
+			// TODO: support other actions "refresh", etc.
 			if action.Action == "download" {
 				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
 
-				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name) // //s.getRevision(action.Channel, action.Name)
+				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name)
 				if err2 == nil && snapRevision != nil {
 					storeSnap, err3 := snapEntry.ToStoreSnap(snapRevision)
 					if err3 == nil && storeSnap != nil {
@@ -77,7 +119,7 @@ func (h *Handler) SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.S
 				}
 			} else if action.Action == "install" {
 				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name) // //s.getRevision(action.Channel, action.Name)
+				snapRevision, err2 := h.snaps.GetRevisionByChannel(action.Channel, action.Name)
 				if err2 == nil && snapRevision != nil {
 					storeSnap, err3 := snapEntry.ToStoreSnap(snapRevision)
 					if err3 == nil && storeSnap != nil {

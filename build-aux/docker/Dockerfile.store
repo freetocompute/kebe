@@ -1,4 +1,6 @@
-FROM golang:1.16 AS builder
+# FROM golang:1.16 AS builder
+
+FROM kebe-store-base AS builder
 
 COPY . /source
 WORKDIR /source

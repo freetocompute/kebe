@@ -222,7 +222,7 @@ func (d *DashboardHandler) GetUploadStatus(upDownId string) (*responses.Status, 
 		h.Write(bytes)
 		actualSha3 := fmt.Sprintf("%x", h.Sum(nil))
 
-		rev, err4 := d.snaps.GetRevisionBySHA(actualSha3)
+		rev, err4 := d.snaps.GetRevisionBySHA(actualSha3, false)
 		var revision models.SnapRevision
 		if err4 == nil && rev != nil {
 			revision = *rev

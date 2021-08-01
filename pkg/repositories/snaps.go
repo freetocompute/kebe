@@ -18,9 +18,10 @@ import (
 
 type ISnapsRepository interface {
 	GetSnap(name string, preloadAssociations bool) (*models.SnapEntry, error)
+	GetSnapById(id uint, preloadAssociations bool) (*models.SnapEntry, error)
 	AddSnap(name string, accountId uint) (*models.SnapEntry, error)
 
-	GetRevisionBySHA(SHA3_384 string) (*models.SnapRevision, error)
+	GetRevisionBySHA(SHA3_384 string, encoded bool) (*models.SnapRevision, error)
 	GetUpload(upDownId string) (*models.SnapUpload, error)
 	UpdateRevision(revision *models.SnapRevision, revisionBytes *[]byte) (*models.SnapRevision, error)
 
@@ -205,13 +206,21 @@ func (sp *SnapsRepository) AddUpload(snapName string, upDownId string, fileSize 
 	return nil, errors.New("unknown error encountered")
 }
 
-func (sp *SnapsRepository) GetRevisionBySHA(SHA3_384 string) (*models.SnapRevision, error) {
+func (sp *SnapsRepository) GetRevisionBySHA(SHA3_384 string, encoded bool) (*models.SnapRevision, error) {
 	var revision models.SnapRevision
-	db := sp.db.Where(models.SnapRevision{SHA3_384: SHA3_384}).Find(&revision)
+	var db *gorm.DB
+	if encoded {
+		logrus.Tracef("Getting snap revision by encoded sha3_384: %s", SHA3_384)
+		db = sp.db.Where(&models.SnapRevision{SHA3384Encoded: SHA3_384}).Find(&revision)
+	} else {
+		logrus.Tracef("Getting snap revision by sha3_384: %s", SHA3_384)
+		db = sp.db.Where(&models.SnapRevision{SHA3_384: SHA3_384}).Find(&revision)
+	}
+
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		return &revision, nil
 	} else if db.Error == nil {
-		return nil, nil
+		return nil, errors.New("now rows cound in GetRevisionBySHA")
 	}
 
 	return nil, db.Error
@@ -252,6 +261,29 @@ func (sp *SnapsRepository) GetSnaps() (*[]models.SnapEntry, error) {
 	if db.Error == nil {
 		return &snaps, nil
 	}
+
+	return nil, db.Error
+}
+
+func (sp *SnapsRepository) GetSnapById(id uint, preloadAssociations bool) (*models.SnapEntry, error) {
+	var existingSnap models.SnapEntry
+	var db *gorm.DB
+	whereModel := &models.SnapEntry{Model: gorm.Model{ID: id}}
+	if preloadAssociations {
+		db = sp.db.Preload(clause.Associations).Where(whereModel).Find(&existingSnap)
+	} else {
+		db = sp.db.Where(whereModel).Find(&existingSnap)
+	}
+
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		return &existingSnap, nil
+	}
+
+	if db.Error != nil {
+		return nil, db.Error
+	}
+
+	logrus.Errorf("Could not find snap id: %d", id)
 
 	return nil, db.Error
 }

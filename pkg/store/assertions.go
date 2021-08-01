@@ -13,54 +13,33 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
-	"gorm.io/gorm/clause"
 )
 
 func (s *Store) getSnapRevisionAssertion(c *gin.Context) {
 	sha3384digest := c.Param("sha3384digest")
 	logrus.Tracef("Requested snap-revision: %s", sha3384digest)
 
-	var snapRevision models.SnapRevision
-	db := s.db.Where(&models.SnapRevision{SHA3384Encoded: sha3384digest}).Find(&snapRevision)
-	if db.Error != nil {
-		logrus.Error(db.Error)
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	} else if db.RowsAffected == 0 {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-
-	var snapEntry models.SnapEntry
-	db = s.db.Preload(clause.Associations).Where("id", snapRevision.SnapEntryID).Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		writer := c.Writer
-		storeAuthorityId := config.MustGetString(configkey.RootAuthority)
-		assertion, err := asserts2.MakeSnapRevisionAssertion(storeAuthorityId, sha3384digest, snapEntry.SnapStoreID, uint64(snapRevision.Size), int(snapRevision.ID), snapEntry.Account.AccountId,
-			asserts.RSAPrivateKey(s.rootStoreKey).PublicKey().ID(), s.assertsDatabase)
-
-		if err != nil {
-			logrus.Error(err)
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
+	assertion, err := s.handler.GetSnapRevisionAssertion(sha3384digest, s.rootStoreKey, s.assertsDatabase)
+	if err == nil && assertion != nil {
 		encodedAssertion := asserts.Encode(assertion)
 		logrus.Trace("Sending snap-revision assertion: ")
 		logrus.Trace(string(encodedAssertion))
 
-		writer.Header().Set("Content-Type", asserts.MediaType)
-		writer.WriteHeader(200)
-		_, err = writer.Write(asserts.Encode(assertion))
+		c.Writer.Header().Set("Content-Type", asserts.MediaType)
+		c.Writer.WriteHeader(200)
+		_, err = c.Writer.Write(asserts.Encode(assertion))
 		if err != nil {
 			logrus.Error(err)
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered in getSnapRevisionAssertion")
 	}
 
-	logrus.Error("no snap entry found")
 	c.AbortWithStatus(http.StatusBadRequest)
 }
 
