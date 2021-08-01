@@ -3,6 +3,12 @@ package store
 import "github.com/gin-gonic/gin"
 
 func (s *Store) SetupEndpoints(r *gin.Engine) {
+	// auth: https://api.snapcraft.io/docs/auth.html
+	r.POST("/api/v1/snaps/auth/devices", s.authDevicePOST)
+	r.POST("/api/v1/snaps/auth/nonces", s.authNonce)
+	r.POST("/api/v1/snaps/auth/request-id", s.authRequestIdPOST)
+	r.POST("/api/v1/snaps/auth/sessions", s.authSession)
+
 	r.GET("/api/v1/snaps/assertions/account/:id", s.getAccountAssertion)
 	r.GET("/api/v1/snaps/assertions/account-key/:key", s.getAccountKey)
 	r.GET("/api/v1/snaps/assertions/snap-declaration/16/:snap-id", s.getSnapDeclarationAssertion)
@@ -19,12 +25,5 @@ func (s *Store) SetupEndpoints(r *gin.Engine) {
 
 	r.GET("/download/snaps/:filename", s.snapDownload)
 
-	// ----- EVERYTHING BELOW THIS LINE IS FUBAR
 	r.POST("/unscanned-upload/", s.unscannedUpload)
-
-	// auth: https://api.snapcraft.io/docs/auth.html
-	r.POST("/api/v1/snaps/auth/request-id", s.authRequestIdPOST)
-	r.POST("/api/v1/snaps/auth/devices", s.authDevicePOST)
-	r.POST("/api/v1/snaps/auth/nonces", s.authNonce)
-	r.POST("/api/v1/snaps/auth/sessions", s.authSession)
 }

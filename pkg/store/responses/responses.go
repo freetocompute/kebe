@@ -147,3 +147,7 @@ type Nonce struct {
 type Session struct {
 	Macaroon string `json:"macaroon"`
 }
+
+type AuthRequestIDResp struct {
+	RequestID string `json:"request-id"`
+}

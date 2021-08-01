@@ -4,6 +4,15 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"errors"
+	"io"
+	"os"
+	"path"
+	"strconv"
+
+	"github.com/freetocompute/kebe/pkg/database"
+	"github.com/freetocompute/kebe/pkg/models"
+
+	"github.com/google/uuid"
 
 	"github.com/snapcore/snapd/asserts/assertstest"
 
@@ -36,6 +45,11 @@ type IStoreHandler interface {
 	GetSnapDeclarationAssertion(snapId string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapDeclaration, error)
 	GetAccountKeyAssertion(keySHA3384 string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.AccountKey, error)
 	GetAccountAssertion(accountId string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.Account, error)
+	UnscannedUpload(snapFile io.Reader) (string, error)
+	AuthRequest() *responses.AuthRequestIDResp
+	AuthDevice(serialRequest *asserts.SerialRequest, genericPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.Serial, error)
+	AuthNonce() *responses.Nonce
+	AuthSession() *responses.Session
 }
 
 type Handler struct {
@@ -48,6 +62,78 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 		accts,
 		snaps,
 	}
+}
+
+func (h *Handler) AuthRequest() *responses.AuthRequestIDResp {
+	nextAuthRequest := models.AuthRequest{}
+	database.DB.Save(&nextAuthRequest)
+
+	resp := &responses.AuthRequestIDResp{RequestID: strconv.Itoa(int(nextAuthRequest.ID))}
+	return resp
+}
+
+func (h *Handler) AuthDevice(serialRequest *asserts.SerialRequest, genericPrivateKey asserts.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.Serial, error) {
+	// TODO: this private key needs to be handled differently
+
+	// TODO: store session information in the database
+	serial := uuid.New().String()
+	encodedKeyBytes, err := asserts.EncodePublicKey(serialRequest.DeviceKey())
+	if err != nil {
+		panic(err)
+	}
+
+	serialHeaders := map[string]interface{}{
+		"brand-id":            serialRequest.BrandID(),
+		"model":               serialRequest.Model(),
+		"authority-id":        serialRequest.BrandID(),
+		"serial":              serial,
+		"device-key":          string(encodedKeyBytes),
+		"device-key-sha3-384": serialRequest.DeviceKey().ID(),
+		// TODO: fix this static timestamp
+		"timestamp": "2021-03-06T15:04:00Z",
+	}
+
+	// TODO: look up actual account, get key, etc.
+	assertion, err := signingDB.Sign(asserts.SerialType, serialHeaders, nil, genericPrivateKey.PublicKey().ID())
+
+	if err == nil && assertion != nil {
+		if serialAssertion, ok := assertion.(*asserts.Serial); ok {
+			return serialAssertion, nil
+		} else {
+			return nil, errors.New("unable to assert type on serial assertion")
+		}
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	return nil, errors.New("unknown error encountered trying to get serial assertion")
+}
+
+func (h *Handler) UnscannedUpload(snapFile io.Reader) (string, error) {
+	snapFileName, id, err := saveFileToTemp(snapFile)
+	if err == nil {
+		// TODO: create "unscanned" bucket if it doesn't exist, should check at start-up / constuction
+		objStore := objectstore.NewObjectStore()
+		err = objStore.SaveFileToBucket("unscanned", path.Join("/", "tmp", snapFileName))
+		if err == nil {
+			return id, nil
+		}
+	}
+
+	logrus.Error(err)
+	return "", err
+
+}
+
+func (h *Handler) AuthSession() *responses.Session {
+	session := &responses.Session{Macaroon: "12345-678-9101112"}
+	return session
+}
+
+func (h *Handler) AuthNonce() *responses.Nonce {
+	nonce := responses.Nonce{Nonce: uuid.New().String()}
+	return &nonce
 }
 
 func (h *Handler) GetAccountKeyAssertion(keySHA3384 string, rootStoreKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) (*asserts.AccountKey, error) {
@@ -378,4 +464,23 @@ func getTrustedAccount(accountID string, signingDB *assertstest.SigningDB, displ
 	trustedAcct := assertstest.NewAccount(signingDB, accountID, trustedAcctHeaders, "")
 
 	return trustedAcct
+}
+
+func saveFileToTemp(snapFile io.Reader) (string, string, error) {
+	// Generate random file name for the new uploaded file so it doesn't override the old file with same name
+	snapFileId := uuid.New().String()
+	newFileName := snapFileId + ".snap"
+
+	out, err := os.Create(path.Join("/tmp", newFileName))
+	if err != nil {
+		return "", "", err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, snapFile)
+	if err != nil {
+		return "", "", err
+	}
+
+	return newFileName, snapFileId, nil
 }

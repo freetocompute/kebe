@@ -8,23 +8,19 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"path"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/freetocompute/kebe/pkg/store/responses"
 
 	"github.com/freetocompute/kebe/pkg/repositories"
 
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/crypto"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/freetocompute/kebe/pkg/objectstore"
 	"github.com/freetocompute/kebe/pkg/store/requests"
-	"github.com/freetocompute/kebe/pkg/store/responses"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
@@ -200,22 +196,6 @@ func (s *Store) getSnapNames(c *gin.Context) {
 	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
-func (s *Store) saveFileToTemp(c *gin.Context, snapFile *multipart.FileHeader) (string, string) {
-	// Generate random file name for the new uploaded file so it doesn't override the old file with same name
-	snapFileId := uuid.New().String()
-	newFileName := snapFileId + ".snap"
-
-	// The file is received, so let's save it
-	if err := c.SaveUploadedFile(snapFile, "/tmp/"+newFileName); err != nil {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"message": "Unable to save the file",
-		})
-		return "", ""
-	}
-
-	return newFileName, snapFileId
-}
-
 func (s *Store) unscannedUpload(c *gin.Context) {
 	snapFileData, err := c.FormFile("binary")
 
@@ -227,32 +207,28 @@ func (s *Store) unscannedUpload(c *gin.Context) {
 		return
 	}
 
-	snapFileName, id := s.saveFileToTemp(c, snapFileData)
-
-	// TODO: create "unscanned" bucket if it doesn't exist
-	objStore := objectstore.NewObjectStore()
-	err = objStore.SaveFileToBucket("unscanned", path.Join("/", "tmp", snapFileName))
-	if err != nil {
-		logrus.Error(err)
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
+	file, err := snapFileData.Open()
+	defer func(file multipart.File) {
+		err2 := file.Close()
+		if err2 != nil {
+			logrus.Error(err2)
+		}
+	}(file)
+	if err == nil {
+		id, err2 := s.handler.UnscannedUpload(file)
+		if err2 == nil && id != "" {
+			c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
+		}
 	}
-
-	c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
 }
 
 func (s *Store) authRequestIdPOST(c *gin.Context) {
-	nextAuthRequest := models.AuthRequest{}
-	database.DB.Save(&nextAuthRequest)
-
-	c.JSON(http.StatusOK, requests.RequestIDResp{RequestID: strconv.Itoa(int(nextAuthRequest.ID))})
+	resp := s.handler.AuthRequest()
+	c.JSON(http.StatusOK, resp)
 }
 
 func (s *Store) authDevicePOST(c *gin.Context) {
 	request := c.Request
-	writer := c.Writer
 	dec := asserts.NewDecoder(request.Body)
 	for {
 		got, err := dec.Decode()
@@ -260,48 +236,27 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 			break
 		}
 		if err != nil { // assume broken i/o
-			// return nil, nil, retryErr(t, 0, "cannot read response to request for a serial: %v", err)
 			panic(err)
 		}
 		if got.Type() == asserts.SerialRequestType {
-			serialRequst := got.(*asserts.SerialRequest)
+			serialRequest := got.(*asserts.SerialRequest)
 
-			serial := uuid.New().String()
-			encodedKeyBytes, err := asserts.EncodePublicKey(serialRequst.DeviceKey())
-			if err != nil {
-				panic(err)
+			serialAssertion, err2 := s.handler.AuthDevice(serialRequest, asserts.RSAPrivateKey(s.genericPrivateKey), s.signingDB)
+			if err2 == nil && serialAssertion != nil {
+				encodedSerialAssertion := asserts.Encode(serialAssertion)
+				logrus.Trace("Sending serial assertion: ")
+
+				c.Writer.Header().Set("Content-Type", asserts.MediaType)
+				c.Writer.WriteHeader(200)
+				_, err3 := c.Writer.Write(encodedSerialAssertion)
+				if err3 == nil {
+					return
+				}
+
+				logrus.Error(err3)
 			}
-
-			serialHeaders := map[string]interface{}{
-				"brand-id":            serialRequst.BrandID(),
-				"model":               serialRequst.Model(),
-				"authority-id":        serialRequst.BrandID(),
-				"serial":              serial,
-				"device-key":          string(encodedKeyBytes),
-				"device-key-sha3-384": serialRequst.DeviceKey().ID(),
-				// TODO: fix this static timestamp
-				"timestamp": "2021-03-06T15:04:00Z",
-			}
-
-			// TODO: look up actual account, get key, etc.
-			ak := asserts.RSAPrivateKey(s.genericPrivateKey)
-			serialAssertion, err := s.signingDB.Sign(asserts.SerialType, serialHeaders, nil, ak.PublicKey().ID())
-			if err != nil {
-				panic(err)
-			}
-
-			encodedSerialAssertion := asserts.Encode(serialAssertion)
-			logrus.Trace("Sending serial assertion: ")
-			logrus.Trace(string(encodedSerialAssertion))
-
-			writer.Header().Set("Content-Type", asserts.MediaType)
-			writer.WriteHeader(200)
-			_, err2 := writer.Write(asserts.Encode(serialAssertion))
-			if err2 == nil {
-				return
-			}
-
-			logrus.Error(err2)
+		} else {
+			logrus.Warningf("Assertion type included but not exepected: %s", got.Type().Name)
 		}
 	}
 
@@ -310,13 +265,14 @@ func (s *Store) authDevicePOST(c *gin.Context) {
 
 func (s *Store) authNonce(c *gin.Context) {
 	// TODO: do we need to store this?
-	nonce := responses.Nonce{Nonce: uuid.New().String()}
+	nonce := s.handler.AuthNonce()
 	c.JSON(http.StatusOK, &nonce)
 }
 
 func (s *Store) authSession(c *gin.Context) {
 	// TODO: implement actual sessions?
-	c.JSON(http.StatusOK, &responses.Session{Macaroon: "12345-678-9101112"})
+	session := s.handler.AuthSession()
+	c.JSON(http.StatusOK, session)
 }
 
 func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {
