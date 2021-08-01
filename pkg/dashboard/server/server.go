@@ -223,6 +223,7 @@ func (s *Server) registerSnapName(c *gin.Context) {
 		resp, err2 := s.handler.RegisterSnapName(accountEmail, isDryRun, registerSnapName.Name)
 		if err2 == nil && resp != nil {
 			c.JSON(http.StatusOK, resp)
+			return
 		}
 	} else {
 		logrus.Error(err)

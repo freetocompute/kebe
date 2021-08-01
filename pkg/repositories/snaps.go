@@ -19,6 +19,7 @@ import (
 type ISnapsRepository interface {
 	GetSnap(name string, preloadAssociations bool) (*models.SnapEntry, error)
 	GetSnapById(id uint, preloadAssociations bool) (*models.SnapEntry, error)
+	GetSnapByStoreId(snapStoreId string, preloadAssociations bool) (*models.SnapEntry, error)
 	AddSnap(name string, accountId uint) (*models.SnapEntry, error)
 
 	GetRevisionBySHA(SHA3_384 string, encoded bool) (*models.SnapRevision, error)
@@ -220,7 +221,8 @@ func (sp *SnapsRepository) GetRevisionBySHA(SHA3_384 string, encoded bool) (*mod
 	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
 		return &revision, nil
 	} else if db.Error == nil {
-		return nil, errors.New("now rows cound in GetRevisionBySHA")
+		logrus.Warningf("No revisions found for %s, encoded = %t", SHA3_384, encoded)
+		return nil, nil
 	}
 
 	return nil, db.Error
@@ -265,6 +267,11 @@ func (sp *SnapsRepository) GetSnaps() (*[]models.SnapEntry, error) {
 	return nil, db.Error
 }
 
+func (sp *SnapsRepository) GetSnapByStoreId(storeId string, preloadAssociations bool) (*models.SnapEntry, error) {
+	whereModel := &models.SnapEntry{SnapStoreID: storeId}
+	return sp.getSnap(whereModel, preloadAssociations)
+}
+
 func (sp *SnapsRepository) GetSnapById(id uint, preloadAssociations bool) (*models.SnapEntry, error) {
 	var existingSnap models.SnapEntry
 	var db *gorm.DB
@@ -284,8 +291,7 @@ func (sp *SnapsRepository) GetSnapById(id uint, preloadAssociations bool) (*mode
 	}
 
 	logrus.Errorf("Could not find snap id: %d", id)
-
-	return nil, db.Error
+	return nil, nil
 }
 
 func (sp *SnapsRepository) GetSnap(name string, preloadAssociations bool) (*models.SnapEntry, error) {
@@ -305,14 +311,13 @@ func (sp *SnapsRepository) GetSnap(name string, preloadAssociations bool) (*mode
 		return nil, db.Error
 	}
 
-	logrus.Errorf("Could not find snap %s", name)
-
-	return nil, db.Error
+	logrus.Warningf("Could not find snap %s", name)
+	return nil, nil
 }
 
 func (sp *SnapsRepository) AddSnap(name string, accountId uint) (*models.SnapEntry, error) {
 	existingSnap, err := sp.GetSnap(name, false)
-	if err == nil && existingSnap != nil {
+	if err == nil && existingSnap == nil {
 		// when adding a snap, not finding one _is_ (!ok) what you want
 		var newSnapEntry models.SnapEntry
 		snapId := uuid.New()
@@ -433,4 +438,26 @@ func (sp *SnapsRepository) updateMeta(metaBytes *[]byte) error {
 	}
 
 	return err2
+}
+
+func (sp *SnapsRepository) getSnap(whereModel *models.SnapEntry, preloadAssociations bool) (*models.SnapEntry, error) {
+	var existingSnap models.SnapEntry
+	var db *gorm.DB
+	if preloadAssociations {
+		db = sp.db.Preload(clause.Associations).Where(whereModel).Find(&existingSnap)
+	} else {
+		db = sp.db.Where(whereModel).Find(&existingSnap)
+	}
+
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+		return &existingSnap, nil
+	}
+
+	if db.Error != nil {
+		return nil, db.Error
+	}
+
+	logrus.Errorf("Could not find snap %+v", *whereModel)
+
+	return nil, nil
 }

@@ -335,6 +335,7 @@ func (d *DashboardHandler) RegisterSnapName(accountEmail string, isDryRun bool, 
 		account, err2 := d.accounts.GetAccountByEmail(accountEmail, false)
 		if err2 == nil && account != nil {
 			if !isDryRun {
+				logrus.Trace("This is not a dry run")
 				snap, err3 := d.snaps.AddSnap(snapName, account.ID)
 				if err3 == nil && snap != nil {
 					resp := responses.RegisterSnap{
@@ -345,8 +346,9 @@ func (d *DashboardHandler) RegisterSnapName(accountEmail string, isDryRun bool, 
 					return &resp, nil
 				}
 			} else {
+				logrus.Trace("This is a dry run")
 				snap, err3 := d.snaps.GetSnap(snapName, false)
-				if err3 == nil && snap != nil {
+				if err3 == nil && snap == nil {
 					resp := responses.RegisterSnap{
 						Name: snapName,
 					}

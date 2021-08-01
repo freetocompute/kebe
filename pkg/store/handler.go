@@ -30,6 +30,7 @@ type IStoreHandler interface {
 	SnapRefresh(actions *[]*requests.SnapActionJSON) (*responses.SnapActionResultList, error)
 	SnapDownload(snapFilename string) (*[]byte, error)
 	GetSnapRevisionAssertion(SHA3384Encoded string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapRevision, error)
+	GetSnapDeclarationAssertion(snapId string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapDeclaration, error)
 }
 
 type Handler struct {
@@ -42,6 +43,31 @@ func NewHandler(accts repositories.IAccountRepository, snaps repositories.ISnaps
 		accts,
 		snaps,
 	}
+}
+
+func (h *Handler) GetSnapDeclarationAssertion(snapStoreId string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapDeclaration, error) {
+	logrus.Tracef("Requested snap-declaration: %s", snapStoreId)
+
+	snapEntry, err := h.snaps.GetSnapByStoreId(snapStoreId, true)
+	if err == nil && snapEntry != nil {
+		// TODO: do this sooner, like during construction to fail then if not MUST
+		rootAuthorityId := config.MustGetString(configkey.RootAuthority)
+
+		aaa, err2 := asserts2.MakeSnapDeclarationAssertion(rootAuthorityId, snapEntry.Account.AccountId, snapEntry, asserts.RSAPrivateKey(rootStoreKey), assertsDB)
+		if err2 == nil && aaa != nil {
+			return aaa, nil
+		} else if err2 == nil {
+			logrus.Error(err2)
+			return nil, err2
+		}
+	} else if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
+
+	errUnknown := errors.New("unknown error in GetSnapDeclarationAssertion")
+	logrus.Error(errUnknown)
+	return nil, errUnknown
 }
 
 func (h *Handler) GetSnapRevisionAssertion(SHA3384Encoded string, rootStoreKey *rsa.PrivateKey, assertsDB *asserts.Database) (*asserts.SnapRevision, error) {

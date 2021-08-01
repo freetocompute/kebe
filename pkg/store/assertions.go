@@ -4,11 +4,8 @@ import (
 	"encoding/base64"
 	"net/http"
 
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/models"
-	asserts2 "github.com/freetocompute/kebe/pkg/store/asserts"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
@@ -47,37 +44,27 @@ func (s *Store) getSnapDeclarationAssertion(c *gin.Context) {
 	snapId := c.Param("snap-id")
 	logrus.Tracef("Requested snap-declaration: %s", snapId)
 
-	var snapEntry models.SnapEntry
-	db := s.db.Where("snap_store_id", snapId).Preload("Account").Find(&snapEntry)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		writer := c.Writer
-
-		rootAuthorityId := config.MustGetString(configkey.RootAuthority)
-		aaa, err := asserts2.MakeSnapDeclarationAssertion(rootAuthorityId, snapEntry.Account.AccountId, &snapEntry, asserts.RSAPrivateKey(s.rootStoreKey), s.assertsDatabase)
-		if err != nil {
-			logrus.Error(err)
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
-		encodedAssertion := asserts.Encode(aaa)
+	assertion, err := s.handler.GetSnapDeclarationAssertion(snapId, s.rootStoreKey, s.assertsDatabase)
+	if err == nil && assertion != nil {
+		encodedAssertion := asserts.Encode(assertion)
 		logrus.Trace("Sending snap-declaraction assertion: ")
 		logrus.Trace(string(encodedAssertion))
 
-		writer.Header().Set("Content-Type", asserts.MediaType)
+		c.Writer.Header().Set("Content-Type", asserts.MediaType)
 
-		_, err = writer.Write(asserts.Encode(aaa))
+		_, err = c.Writer.Write(asserts.Encode(assertion))
 		if err == nil {
-			writer.WriteHeader(200)
+			c.Writer.WriteHeader(200)
 			return
 		}
 
 		logrus.Error(err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered in getSnapDeclarationAssertion")
 	}
 
-	logrus.Error("no snap entry found")
 	c.AbortWithStatus(http.StatusBadRequest)
 }
 
