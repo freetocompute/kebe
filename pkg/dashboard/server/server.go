@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/freetocompute/kebe/pkg/middleware"
+
 	"github.com/freetocompute/kebe/pkg/assertions"
 	"github.com/snapcore/snapd/asserts"
 
@@ -16,44 +18,21 @@ import (
 	"github.com/freetocompute/kebe/pkg/auth"
 	"github.com/freetocompute/kebe/pkg/dashboard/responses"
 
-	"github.com/freetocompute/kebe/pkg/repositories"
-
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/middleware"
 	storeRequests "github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
-	"gorm.io/gorm"
 )
 
 type Server struct {
 	engine  *gin.Engine
 	port    int
-	db      *gorm.DB
 	handler IDashboardHandler
 }
 
-func (s *Server) Init() {
-	logrus.SetLevel(logrus.TraceLevel)
-	config.LoadConfig()
-
-	logLevelConfig := viper.GetString(configkey.LogLevel)
-	l, errLevel := logrus.ParseLevel(logLevelConfig)
-	if errLevel != nil {
-		logrus.Error(errLevel)
-	} else {
-		logrus.SetLevel(l)
-	}
-
-	dashboardPort := viper.GetInt(configkey.DashboardPort)
-
-	// Setup gin and routes
+func New(useRequestLogger bool, handler IDashboardHandler, dashboardPort int) *Server {
 	r := gin.Default()
 
-	if viper.GetBool(configkey.RequestLogger) {
+	if useRequestLogger {
 		logrus.Info("Request logger enabled")
 		r.Use(middleware.RequestLoggerMiddleware())
 	}
@@ -62,13 +41,13 @@ func (s *Server) Init() {
 		c.JSON(404, gin.H{"code": "KEBE STORE: PAGE_NOT_FOUND", "message": "Page not found"})
 	})
 
-	db, _ := database.CreateDatabase()
-	s.db = db
-	s.handler = NewDashboardHandler(repositories.NewAccountRepository(db), repositories.NewSnapsRepository(db))
-	s.port = dashboardPort
-	s.engine = r
+	s := &Server{
+		engine:  r,
+		port:    dashboardPort,
+		handler: handler,
+	}
 
-	s.SetupEndpoints()
+	return s
 }
 
 func (s *Server) Run() {

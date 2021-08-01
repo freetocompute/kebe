@@ -1,14 +1,11 @@
 package server
 
 import (
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/middleware"
+	"github.com/gin-gonic/gin"
 )
 
-func (s *Server) SetupEndpoints() {
+func (s *Server) SetupEndpoints(checkForAuthorizedUser gin.HandlerFunc) {
 	r := s.engine
-	rootKey := config.MustGetString(configkey.MacaroonRootKey)
 
 	public := r.Group("/dev/api")
 	public.POST("/acl/", s.postACL)
@@ -18,7 +15,7 @@ func (s *Server) SetupEndpoints() {
 	public.POST("/acl/verify/", s.verifyACL)
 
 	private := r.Group("/dev/api")
-	private.Use(middleware.CheckForAuthorizedUserWithMacaroons(s.db, rootKey))
+	private.Use(checkForAuthorizedUser)
 
 	private.GET("/account", s.getAccount)
 	private.POST("/register-name", s.registerSnapName)
@@ -28,7 +25,7 @@ func (s *Server) SetupEndpoints() {
 	private.POST("/snap-release", s.snapRelease)
 
 	apiV2Private := r.Group("/api/v2")
-	apiV2Private.Use(middleware.CheckForAuthorizedUserWithMacaroons(s.db, rootKey))
+	apiV2Private.Use(checkForAuthorizedUser)
 	apiV2Private.GET("/snaps/:snap/channel-map", s.getSnapChannelMap)
 
 	// TODO: implement /api/v2/snaps/<snap-name>/releases for `snapcraft list-revisions <snap-name>`
