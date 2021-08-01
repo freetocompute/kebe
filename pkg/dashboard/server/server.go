@@ -1,172 +1,268 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/auth"
-	"github.com/freetocompute/kebe/pkg/dashboard/requests"
-	"github.com/freetocompute/kebe/pkg/dashboard/responses"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/middleware"
-	"github.com/freetocompute/kebe/pkg/models"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
-	"gopkg.in/macaroon.v2"
-	"gorm.io/gorm"
 	"io"
 	"net/http"
+	"strconv"
+
+	"github.com/freetocompute/kebe/pkg/middleware"
+
+	"github.com/freetocompute/kebe/pkg/assertions"
+	"github.com/snapcore/snapd/asserts"
+
+	"github.com/freetocompute/kebe/pkg/dashboard/requests"
+
+	"github.com/freetocompute/kebe/pkg/auth"
+	"github.com/freetocompute/kebe/pkg/dashboard/responses"
+
+	storeRequests "github.com/freetocompute/kebe/pkg/store/requests"
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 type Server struct {
-	engine *gin.Engine
-	port int
-	db *gorm.DB
+	engine  *gin.Engine
+	port    int
+	handler IDashboardHandler
 }
 
-func (s *Server) Init() {
-	logrus.SetLevel(logrus.TraceLevel)
-	config.LoadConfig()
-
-	logLevelConfig := viper.GetString(configkey.LogLevel)
-	l, errLevel := logrus.ParseLevel(logLevelConfig)
-	if errLevel != nil {
-		logrus.Error(errLevel)
-	} else {
-		logrus.SetLevel(l)
-	}
-
-	dashboardPort := viper.GetInt(configkey.DashboardPort)
-
-	// Setup gin and routes
+func New(useRequestLogger bool, handler IDashboardHandler, dashboardPort int) *Server {
 	r := gin.Default()
-	if viper.GetBool(configkey.DebugMode) {
-		logrus.Info("Debug mode enabled")
+
+	if useRequestLogger {
+		logrus.Info("Request logger enabled")
 		r.Use(middleware.RequestLoggerMiddleware())
-	} else {
-		logrus.Info("Debug mode disabled")
 	}
 
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(404, gin.H{"code": "KEBE STORE: PAGE_NOT_FOUND", "message": "Page not found"})
 	})
 
-	db, _ := database.CreateDatabase()
-	s.db = db
+	s := &Server{
+		engine:  r,
+		port:    dashboardPort,
+		handler: handler,
+	}
 
-	s.SetupEndpoints(r)
-
-	s.port = dashboardPort
-	s.engine = r
+	return s
 }
 
 func (s *Server) Run() {
 	_ = s.engine.Run(fmt.Sprintf(":%d", s.port))
 }
 
+func (s *Server) getAccount(c *gin.Context) {
+	accountEmail := c.GetString("email")
+	if accountEmail != "" {
+		accountInfo, err := s.handler.GetAccount(accountEmail)
+		if err == nil {
+			c.JSON(http.StatusOK, &accountInfo)
+			return
+		}
+	}
+}
+
 func (s *Server) postACL(c *gin.Context) {
-	var requestACL requests.ACLRequest
 	bodyBytes, _ := io.ReadAll(c.Request.Body)
 	bodyString := string(bodyBytes)
-	_ = json.Unmarshal(bodyBytes, &requestACL)
 
-	rootKeyString := config.MustGetString(configkey.MacaroonRootKey)
-	rootMacaroonId := config.MustGetString(configkey.MacaroonRootId)
-	rootMacaroonLocation := config.MustGetString(configkey.MacaroonRootLocation)
-	m := auth.MustNewMacaroon([]byte(rootKeyString), []byte(rootMacaroonId), rootMacaroonLocation, macaroon.V1)
-
-	dischargeKeyString := viper.GetString(configkey.MacaroonDischargeKey)
-	if len(dischargeKeyString) == 0 {
-		// this is panic worthy
-		panic(errors.New("discharge key must be set"))
+	m, err := s.handler.GetACLMacaroon(bodyString)
+	if err == nil {
+		ser, _ := auth.MacaroonSerialize(m)
+		mac := &responses.Macaroon{Macaroon: ser}
+		c.JSON(200, mac)
+		return
 	}
-	thirdPartyCaveatId := config.MustGetString(configkey.MacaroonThirdPartyCaveatId)
-	thirdPartLocation := config.MustGetString(configkey.MacaroonThirdPartyLocation)
-	err := m.AddThirdPartyCaveat([]byte(dischargeKeyString), []byte(thirdPartyCaveatId), thirdPartLocation)
+
+	c.Status(http.StatusInternalServerError)
+}
+
+func (s *Server) pushSnap(c *gin.Context) {
+	var pushSnap storeRequests.SnapPush
+	err := json.NewDecoder(c.Request.Body).Decode(&pushSnap)
+	if err == nil {
+		if pushSnap.DryRun {
+			// TODO: implement necessary checks here
+			c.Status(http.StatusAccepted)
+			return
+		}
+
+		//// TODO: implement xdelta3 handling
+		//// TODO: while this is not supported, the unscanned bucket could become litered with xdelta3 files
+		if pushSnap.DeltaFormat != "" {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		uploadResp, err2 := s.handler.PushSnap(pushSnap.Name, pushSnap.UpDownId, uint(pushSnap.BinaryFileSize), pushSnap.Channels)
+		if err2 == nil && uploadResp != nil {
+			//	// File saved successfully. Return proper result
+			//	// TODO: this URL needs to be serviced by a worker thread
+			c.JSON(http.StatusAccepted, uploadResp)
+			return
+		}
+	}
+
+	logrus.Error(err)
+
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+// The id here is the up-down id generated from the upload to /unscanned-upload/
+func (s *Server) getStatus(c *gin.Context) {
+	// TODO: Do whatever we need to here and then return that it's processed, some day, (hopefully!) this will need to be async!
+	snapUpDownId := c.Param("id")
+
+	resp, err := s.handler.GetUploadStatus(snapUpDownId)
+	if err == nil && resp != nil {
+		c.JSON(http.StatusOK, resp)
+		return
+	} else if err != nil {
+		logrus.Errorf("Error getting status: %s", err)
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) snapRelease(c *gin.Context) {
+	var rel storeRequests.SnapRelease
+	err := json.NewDecoder(c.Request.Body).Decode(&rel)
+	if err == nil {
+		revision, err2 := strconv.Atoi(rel.Revision)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		released, err2 := s.handler.ReleaseSnap(rel.Name, uint(revision), rel.Channels)
+		if err2 == nil {
+			c.JSON(http.StatusOK, &responses.SnapRelease{Success: released})
+			return
+		}
+	} else {
+		logrus.Error(err)
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) getSnapChannelMap(c *gin.Context) {
+	snapName := c.Param("snap")
+	channelMapRoot, err := s.handler.GetSnapChannelMap(snapName)
+	if err == nil && channelMapRoot != nil {
+		c.JSON(http.StatusOK, channelMapRoot)
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		// logrus.Error("unknown error encountered")
+		panic("unknown error encountered")
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Server) verifyACL(c *gin.Context) {
+	var verify requests.Verify
+	err := json.NewDecoder(c.Request.Body).Decode(&verify)
 	if err != nil {
-		panic(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
 	}
 
-	_  = m.AddFirstPartyCaveat([]byte(bodyString))
-
-	ser, _ := auth.MacaroonSerialize(m)
-	mac := &responses.Macaroon{Macaroon: ser}
-	c.JSON(200, mac)
-}
-
-func (s *Server) getAccount(c *gin.Context) {
-	accountUn, exists := c.Get("account")
-	if exists {
-		account, ok := accountUn.(*models.Account)
-		if ok {
-			c.JSON(http.StatusOK, &responses.AccountInfo{
-				AccountId: account.AccountId,
-				Snaps: map[string]map[string]map[string]string{
-					"16": {},
-				},
-				AccountKeys: []responses.Key{},
-			})
-		}
+	response, err := s.handler.VerifyACL(&verify)
+	if err == nil && response != nil {
+		c.JSON(http.StatusOK, &response)
+	} else if err != nil {
+		logrus.Error(err)
 	}
 
-	c.AbortWithStatus(http.StatusUnauthorized)
-}
-
-func GetAccount(c *gin.Context) *models.Account {
-	accountUn, exists := c.Get("account")
-	if exists {
-		account, ok := accountUn.(*models.Account)
-		if ok {
-			return account
-		}
-	}
-
-	return nil
+	c.Status(http.StatusInternalServerError)
 }
 
 func (s *Server) registerSnapName(c *gin.Context) {
 	var registerSnapName requests.RegisterSnapName
-	json.NewDecoder(c.Request.Body).Decode(&registerSnapName)
-
-	account := GetAccount(c)
-
-	var existingSnap models.SnapEntry
-	db := s.db.Where(&models.SnapEntry{Name: registerSnapName.Name}).Find(&existingSnap)
-	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-		// we found an existing snap, no luck
-
-	} else {
-		var newSnapEntry models.SnapEntry
+	err := json.NewDecoder(c.Request.Body).Decode(&registerSnapName)
+	if err == nil {
+		accountEmail := c.GetString("email")
 
 		isDryRun := false
 		dryRunString := c.Query("dry_run")
-		if len(dryRunString) == 0 {
-			isDryRun = false
+		if len(dryRunString) != 0 {
+			dryRun, err2 := strconv.ParseBool(dryRunString)
+			if err2 == nil {
+				isDryRun = dryRun
+			}
 		}
 
-		if !isDryRun {
-			snapId := uuid.New()
+		resp, err2 := s.handler.RegisterSnapName(accountEmail, isDryRun, registerSnapName.Name)
+		if err2 == nil && resp != nil {
+			c.JSON(http.StatusOK, resp)
+			return
+		}
+	} else {
+		logrus.Error(err)
+	}
 
-			newSnapEntry.SnapStoreID = snapId.String()
-			newSnapEntry.Name = registerSnapName.Name
-			newSnapEntry.AccountID = account.ID
-			newSnapEntry.Type = "app"
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
 
-			s.db.Save(&newSnapEntry)
+func (s *Server) addAccountKey(c *gin.Context) {
+	accountEmail := c.GetString("email")
+	if accountEmail != "" {
+		var accountKeyCreationRequest requests.AccountKeyCreateRequest
+		err := json.NewDecoder(c.Request.Body).Decode(&accountKeyCreationRequest)
+		if err != nil {
+			logrus.Error(err)
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
 
-			c.JSON(200, &responses.RegisterSnap{
-				Id:  newSnapEntry.SnapStoreID,
-				Name: newSnapEntry.Name,
-			})
-		} else {
-			newSnapEntry.Name = registerSnapName.Name
-			c.JSON(200, &responses.RegisterSnap{
-				Name: registerSnapName.Name,
-			})
+		if accountKeyCreationRequest.AccountKeyRequest == "" {
+			c.Data(http.StatusBadRequest, "text", []byte("The account key assertion string cannot be empty"))
+			return
+		}
+
+		assertion, err := asserts.Decode([]byte(accountKeyCreationRequest.AccountKeyRequest))
+		if err != nil {
+			c.Data(http.StatusBadRequest, "text", []byte(err.Error()))
+			return
+		}
+
+		if ass, ok := assertion.(*asserts.AccountKeyRequest); ok {
+			logrus.Infof("Account key public key id: %s", ass.PublicKeyID())
+
+			pubKey, err2 := assertions.GetPublicKeyFromBody(ass.Body())
+			if err2 != nil {
+				panic(err2)
+			}
+
+			encodedPublicKey, err2 := asserts.EncodePublicKey(pubKey)
+			if err2 != nil {
+				panic(err2)
+			}
+
+			pubKeyEncodedString := base64.StdEncoding.EncodeToString(encodedPublicKey)
+
+			acct, err2 := s.handler.AddAccountKey(accountEmail, ass.Name(), ass.PublicKeyID(), pubKeyEncodedString)
+			if err2 == nil && acct != nil {
+				c.JSON(http.StatusOK, struct {
+					PublicKey string
+				}{
+					PublicKey: ass.PublicKeyID(),
+				})
+				return
+			} else if err2 != nil {
+				logrus.Error(err2)
+			}
+
+			c.Status(http.StatusInternalServerError)
 		}
 	}
+
+	c.Data(http.StatusBadRequest, "text", []byte("Assertion type wrong, or invalid."))
 }

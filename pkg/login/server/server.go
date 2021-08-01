@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/freetocompute/kebe/config"
 	"github.com/freetocompute/kebe/config/configkey"
@@ -12,6 +16,7 @@ import (
 	"github.com/freetocompute/kebe/pkg/dashboard/responses"
 	"github.com/freetocompute/kebe/pkg/database"
 	"github.com/freetocompute/kebe/pkg/login/requests"
+	responses2 "github.com/freetocompute/kebe/pkg/login/responses"
 	"github.com/freetocompute/kebe/pkg/middleware"
 	"github.com/freetocompute/kebe/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -20,9 +25,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/macaroon.v2"
 	"gorm.io/gorm"
-	"io"
-	"log"
-	"net/http"
+	"gorm.io/gorm/clause"
 )
 
 type Server struct {
@@ -122,7 +125,10 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 						}
 
 						dm := MustNew([]byte(dischargeKeyString), []byte(dischargeRequest.CaveatId), "remote location", macaroon.LatestVersion)
-						dm.AddFirstPartyCaveat([]byte("email=" + dischargeRequest.Email))
+						err2 := dm.AddFirstPartyCaveat([]byte("email=" + dischargeRequest.Email))
+						if err2 != nil {
+							panic(err2)
+						}
 
 						ser, err3 := auth.MacaroonSerialize(dm)
 						if err3 != nil {
@@ -136,18 +142,44 @@ func (s *Server) dischargeTokens(c *gin.Context) {
 						fmt.Println(string(bytes))
 						c.JSON(200, mac)
 					} else {
-						c.AbortWithError(http.StatusInternalServerError, err)
+						logrus.Error(err)
+						c.AbortWithStatus(http.StatusInternalServerError)
+						return
 					}
 				} else {
-					logrus.Error("Failed to verify ID Token: " + err.Error())
+					logrus.Errorf("Failed to verify ID Token: %v", err)
 				}
 			} else {
 				logrus.Error("No id_token field in oauth2 token.")
 			}
 		} else {
-			logrus.Error("Failed to exchange token: "+err.Error())
+			logrus.Errorf("Failed to exchange token: %v", err)
 		}
 	}
 
 	c.AbortWithStatus(http.StatusUnauthorized)
+}
+
+func (s *Server) getSSHKeys(c *gin.Context) {
+	emailAddress := c.Param("email")
+	logrus.Tracef("Email to get ssh keys for: %s", emailAddress)
+	var account models.Account
+	db := s.db.Where(&models.Account{Email: emailAddress}).Preload(clause.Associations).Find(&account)
+	if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
+
+		sshkeysResp := responses2.SSHKeys{
+			Username:         account.Username,
+			SSHKeys:          []string{},
+			OpenIdIdentifier: account.Username,
+		}
+		for _, k := range account.SSHKeys {
+			sshkeysResp.SSHKeys = append(sshkeysResp.SSHKeys, k.PublicKeyString)
+		}
+
+		c.JSON(http.StatusOK, &sshkeysResp)
+		return
+	}
+
+	logrus.Error("there was no record for email address found")
+	c.AbortWithStatus(http.StatusInternalServerError)
 }

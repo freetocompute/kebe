@@ -1,0 +1,17 @@
+{
+  "authority_id": "some-store",
+  "root_key_path": "/home/a-user/root-private-key.pem",
+  "generic_key_path": "/home/a-user/freetocompute/generic-private-key.pem",
+  "root_account_init": {
+    "id": "some-store",
+    "display_name": "some-store",
+    "username": "store",
+    "email": "somebody-else@onceuponatime.com"
+  },
+  "generic_account_init": {
+    "id": "generic",
+    "display_name": "generic",
+    "username": "generic",
+    "email": "somebody@onceuponatime.com"
+  }
+}

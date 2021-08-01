@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
+	"io/ioutil"
 )
 
 // Key represents a key that can be used for signing assertions.
@@ -55,6 +56,12 @@ var (
 	ErrNotRSAPrivateKey    = errors.New("Key is not a valid RSA private key")
 	ErrNotRSAPublicKey     = errors.New("Key is not a valid RSA public key")
 )
+
+func GetPrivateKeyFromPEMFile(keyPath string) asserts.PrivateKey {
+	bytes, _ := ioutil.ReadFile(keyPath)
+	rootPrivateKey, _ := ParseRSAPrivateKeyFromPEM(bytes)
+	return asserts.RSAPrivateKey(rootPrivateKey)
+}
 
 // from: "github.com/dgrijalva/jwt-go"
 // Parse PEM encoded PKCS1 or PKCS8 private key

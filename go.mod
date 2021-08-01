@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/coreos/go-oidc/v3 v3.0.0
 	github.com/frankban/quicktest v1.11.3 // indirect
+	github.com/gin-contrib/static v0.0.1
 	github.com/gin-gonic/gin v1.7.1
 	github.com/go-resty/resty/v2 v2.6.0
 	github.com/godbus/dbus v4.1.0+incompatible // indirect
@@ -21,7 +22,6 @@ require (
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0 // indirect
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sys v0.0.0-20210412220455-f1c623a9e750 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
@@ -30,6 +30,8 @@ require (
 	gopkg.in/macaroon.v2 v2.1.0
 	gopkg.in/retry.v1 v1.0.3 // indirect
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
+	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	gorm.io/driver/postgres v1.1.0
 	gorm.io/gorm v1.21.10
 )

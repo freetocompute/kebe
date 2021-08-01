@@ -11,6 +11,13 @@ type Key struct {
 	Account          Account
 }
 
+type SSHKey struct {
+	gorm.Model
+	PublicKeyString string `gorm:"unique"`
+	AccountID       uint
+	Account         Account
+}
+
 type Account struct {
 	gorm.Model
 	// AccountId is the same as publisher-id and developer-id
@@ -19,6 +26,6 @@ type Account struct {
 	Username    string `gorm:"unique"`
 	Keys        []Key
 	SnapEntries []SnapEntry
-	Email 			 string
-	Password		 string
+	SSHKeys     []SSHKey
+	Email       string
 }

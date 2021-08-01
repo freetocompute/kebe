@@ -1,7 +1,16 @@
-FROM golang:buster
+#FROM golang:1.16 AS builder
+FROM kebe-store-base AS builder
 
 COPY . /source
 WORKDIR /source
 RUN go build -o /bin/kebe-dashboard bin/dashboard/main.go
+
+FROM ubuntu:20.04
+
+RUN apt update && apt install -y squashfs-tools
+
 WORKDIR /bin
+COPY --from=builder /bin/kebe-dashboard .
 EXPOSE 8080
+
+CMD ["/bin/kebe-dashboard"]

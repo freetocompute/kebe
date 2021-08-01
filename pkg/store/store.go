@@ -1,78 +1,56 @@
 package store
 
 import (
-	"context"
 	"crypto/rsa"
 	"encoding/json"
-	"github.com/freetocompute/kebe/config"
-	"github.com/freetocompute/kebe/config/configkey"
-	"github.com/freetocompute/kebe/pkg/crypto"
-	"github.com/freetocompute/kebe/pkg/database"
-	"github.com/freetocompute/kebe/pkg/models"
-	"github.com/freetocompute/kebe/pkg/objectstore"
-	"github.com/freetocompute/kebe/pkg/store/requests"
+	"io"
+	"mime/multipart"
+	"net/http"
+
 	"github.com/freetocompute/kebe/pkg/store/responses"
+
+	"github.com/freetocompute/kebe/pkg/store/requests"
 	"github.com/gin-gonic/gin"
-	"github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 	"github.com/snapcore/snapd/asserts"
 	"github.com/snapcore/snapd/asserts/assertstest"
-	"github.com/snapcore/snapd/snap"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-	"io/ioutil"
-	"net/http"
-	"strings"
-	"sync"
 )
 
-var databaseCreationMutex sync.Mutex
-
 type Store struct {
-	db              *gorm.DB
-	assertsDatabase *asserts.Database
-	rootStoreKey    *rsa.PrivateKey
-	signingDB       *assertstest.SigningDB
+	assertsDatabase   *asserts.Database
+	rootStoreKey      *rsa.PrivateKey
+	genericPrivateKey *rsa.PrivateKey
+	signingDB         *assertstest.SigningDB
+	handler           IStoreHandler
 }
 
-func NewStore(db *gorm.DB) *Store {
-	assertsDatabase := GetDatabaseWithRootKey()
-
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("root", "private-key.pem")
-	rootPrivateKey, err := crypto.ParseRSAPrivateKeyFromPEM(*bytes)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-
-	rootAuthorityId := config.MustGetString(configkey.RootAuthority)
-	signingDB := assertstest.NewSigningDB(rootAuthorityId, asserts.RSAPrivateKey(rootPrivateKey))
-
+func New(handler IStoreHandler, assertsDB *asserts.Database, rootStoreKey *rsa.PrivateKey, genericPrivateKey *rsa.PrivateKey, signingDB *assertstest.SigningDB) *Store {
 	return &Store{
-		db:              db,
-		assertsDatabase: assertsDatabase,
-		rootStoreKey:    rootPrivateKey,
-		signingDB:       signingDB,
+		// db:                db,
+		assertsDatabase:   assertsDB,
+		rootStoreKey:      rootStoreKey,
+		signingDB:         signingDB,
+		genericPrivateKey: genericPrivateKey,
+		handler:           handler,
 	}
-}
-
-func GetDatabaseWithRootKey() *asserts.Database {
-	minioClient := objectstore.GetMinioClient()
-
-	databaseCreationMutex.Lock()
-	defer databaseCreationMutex.Unlock()
-
-	var db *asserts.Database
-	db = GetDatabaseWithRootKeyS3(minioClient)
-	return db
 }
 
 func (s *Store) snapDownload(c *gin.Context) {
 	snapFilename := c.Param("filename")
-	obs := objectstore.NewObjectStore()
-	bytes, _ := obs.GetFileFromBucket("snaps", snapFilename)
-	c.Writer.Write(*bytes)
+
+	bytes, err := s.handler.SnapDownload(snapFilename)
+	if err == nil && bytes != nil {
+		_, err2 := c.Writer.Write(*bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		return
+	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) snapRefresh(c *gin.Context) {
@@ -89,80 +67,17 @@ func (s *Store) snapRefresh(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/json")
 
-	for _, action := range actionRequest.Actions {
-		var snapEntry models.SnapEntry
-		db := s.db.Where("name", action.Name).Preload(clause.Associations).Preload("Revisions").Preload("Account").Find(&snapEntry)
-		if _, ok := database.CheckDBForErrorOrNoRows(db); ok {
-			if action.Action == "download" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-				var snapEntry models.SnapEntry
-				db := s.db.Where("name", action.Name).Preload(clause.Associations).Find(&snapEntry)
-				if db.Error != nil {
-					logrus.Error(db.Error)
-					c.AbortWithStatus(http.StatusBadRequest)
-					return
-				}
-				//
-				latestRevision := snapEntry.GetLatestRevision()
-
-				storeSnap, err := snapEntry.ToStoreSnap(latestRevision.SnapFilename, 0, "")
-				if err != nil {
-					logrus.Error(err)
-					c.AbortWithStatus(http.StatusBadRequest)
-					return
-				}
-				//
-				actionResult := responses.SnapActionResult{
-					Result:      "download",
-					InstanceKey: "download-1",
-					SnapID:      snapEntry.SnapStoreID,
-					Name:        snapEntry.Name,
-					Snap:        storeSnap,
-				}
-				actionResultList := responses.SnapActionResultList{
-					Results: []*responses.SnapActionResult{
-						&actionResult,
-					},
-					ErrorList: nil,
-				}
-
-				c.JSON(http.StatusOK, &actionResultList)
-				return
-
-			} else if action.Action == "install" {
-				logrus.Infof("We know about this snap %s, its id is %s we we'll try to handle it.", snapEntry.Name, snapEntry.SnapStoreID)
-
-				latestRevision := snapEntry.GetLatestRevision()
-
-				storeSnap, err := snapEntry.ToStoreSnap(latestRevision.SnapFilename, 0, "")
-				if err != nil {
-					logrus.Error(err)
-					c.AbortWithStatus(http.StatusBadRequest)
-					return
-				}
-
-				storeSnap.Architectures = []string{"amd64"}
-				storeSnap.Confinement = snapEntry.Confinement
-
-				actionResult := responses.SnapActionResult{
-					Result:      "install",
-					InstanceKey: "install-1",
-					SnapID:      snapEntry.SnapStoreID,
-					Name:        snapEntry.Name,
-					Snap:        storeSnap,
-				}
-				actionResultList := responses.SnapActionResultList{
-					Results: []*responses.SnapActionResult{
-						&actionResult,
-					},
-					ErrorList: nil,
-				}
-
-				c.JSON(http.StatusOK, &actionResultList)
-				return
-			}
-		}
+	snapActionResultList, err := s.handler.SnapRefresh(&actionRequest.Actions)
+	if err == nil && snapActionResultList != nil {
+		c.JSON(http.StatusOK, &snapActionResultList)
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered in snapRefresh")
 	}
+
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) getSnapSections(c *gin.Context) {
@@ -170,78 +85,40 @@ func (s *Store) getSnapSections(c *gin.Context) {
 	logrus.Trace("/api/v1/snaps/sections")
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	sections := responses.SectionResults{
-		Payload: responses.Payload{
-			Sections: []responses.Section{
-				{Name: "general"},
-			},
-		},
+	result, err := s.handler.GetSections()
+	if err == nil && result != nil {
+		c.JSON(http.StatusOK, result)
+	} else if err != nil {
+		logrus.Error(err)
 	}
 
-	bytes, err := json.Marshal(&sections)
-	if err != nil {
-		panic(err)
-	}
-
-	writer.Write(bytes)
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) findSnap(c *gin.Context) {
-	var snaps []models.SnapEntry
+	// TODO: implement query parameters
+	// q : search term, assume name right now
+	name := c.Query("q")
+	searchResults, err := s.handler.FindSnap(name)
+	if err == nil && searchResults != nil {
+		logrus.Infof("%+v", searchResults)
 
-	s.db.Preload("Snap.Revisions").Find(&snaps)
-
-	results := func() []responses.StoreSearchResult {
-		var results []responses.StoreSearchResult
-		for _, snapEntry := range snaps {
-
-			var snapType snap.Type
-			if snapEntry.Type == "app" {
-				snapType = snap.TypeApp
-			} else if snapEntry.Type == "os" {
-				snapType = snap.TypeOS
-			}
-
-			//
-			storeSearchResult := responses.StoreSearchResult{
-				Revision: responses.StoreSearchChannelSnap{
-					StoreSnap: responses.StoreSnap{
-						Confinement: snapEntry.Confinement,
-						CreatedAt: snapEntry.CreatedAt.String(),
-						Name: snapEntry.Name,
-						Revision: int(snapEntry.LatestRevisionID),
-						SnapID:   snapEntry.SnapStoreID,
-						Type: snapType,
-					},
-				},
-				Snap: responses.StoreSnap{
-					Confinement: snapEntry.Confinement,
-					CreatedAt: snapEntry.CreatedAt.String(),
-					Name: snapEntry.Name,
-					Revision: int(snapEntry.LatestRevisionID),
-					SnapID:   snapEntry.SnapStoreID,
-					Type: snapType,
-				},
-				Name:   snapEntry.Name,
-				SnapID: snapEntry.SnapStoreID,
-			}
-
-			results = append(results, storeSearchResult)
+		c.Writer.Header().Set("Content-Type", "application/json")
+		bytes, _ := json.Marshal(&searchResults)
+		_, err2 := c.Writer.Write(bytes)
+		if err2 != nil {
+			logrus.Error(err2)
+			c.AbortWithStatus(http.StatusInternalServerError)
 		}
 
-		return results
-	}()
-
-	searchResult := responses.SearchV2Results{
-		Results:   results,
-		ErrorList: nil,
+		return
+	} else if err != nil {
+		logrus.Error(err)
+	} else {
+		logrus.Error("unknown error encountered handling /v2/snaps/find in findSnap")
 	}
 
-	logrus.Infof("%+v", searchResult)
-
-	c.Writer.Header().Set("Content-Type", "application/json")
-	bytes, _ := json.Marshal(&searchResult)
-	c.Writer.Write(bytes)
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 func (s *Store) getSnapNames(c *gin.Context) {
@@ -250,105 +127,99 @@ func (s *Store) getSnapNames(c *gin.Context) {
 
 	writer.Header().Set("Content-Type", "application/hal+json")
 
-	catalogItems := responses.CatalogResults{
-		Payload: responses.CatalogPayload{
-			Items: []responses.CatalogItem{},
-		},
-	}
-
-	bytes, err := json.Marshal(&catalogItems)
-	if err != nil {
-		panic(err)
-	}
-
-	writer.Write(bytes)
-}
-
-func getDatabaseConfig(minioClient *minio.Client) (*asserts.DatabaseConfig, error) {
-	var trusted []asserts.Assertion
-	var otherPredefined []asserts.Assertion
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
-
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "assertion") {
-				logrus.Tracef("Assertion key: %s", object.Key)
-				filename := object.Key
-				logrus.Tracef("Assertion filename: %s", filename)
-
-				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-
-				assertionBytes, _ := ioutil.ReadAll(objectPtr)
-				logrus.Trace("assertion:")
-				logrus.Trace(string(assertionBytes))
-				assertion, err := asserts.Decode(assertionBytes)
-				if err != nil {
-					panic(err)
-				} else {
-					logrus.Tracef("assertion type: %s", assertion.Type())
-
-					if assertion.Type() == asserts.AccountKeyType {
-						trusted = append(trusted, assertion)
-					} else if assertion.Type() == asserts.AccountType {
-						trusted = append(trusted, assertion)
-					} else {
-						otherPredefined = append(otherPredefined, assertion)
-					}
-				}
+	catalogItems, err := s.handler.GetSnapNames()
+	if err == nil && catalogItems != nil {
+		bytes, err := json.Marshal(catalogItems)
+		if err == nil {
+			_, err2 := writer.Write(bytes)
+			if err2 == nil {
+				return
 			}
 		}
 	}
 
-	cfg := asserts.DatabaseConfig{
-		Trusted:         trusted,
-		OtherPredefined: otherPredefined,
-		Backstore:       asserts.NewMemoryBackstore(),
-		KeypairManager:  asserts.NewMemoryKeypairManager(),
-		Checkers:        nil,
+	if err != nil {
+		logrus.Error(err)
 	}
 
-	return &cfg, nil
+	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
-func GetDatabaseWithRootKeyS3(minioClient *minio.Client) *asserts.Database {
-	databaseCfg, err := getDatabaseConfig(minioClient)
+func (s *Store) unscannedUpload(c *gin.Context) {
+	snapFileData, err := c.FormFile("binary")
 
-	db, err := asserts.OpenDatabase(databaseCfg)
+	// TODO: fix the actual error response to be something expected
 	if err != nil {
-		panic(err)
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": "No snap file is received",
+		})
+		return
 	}
 
-	buckets := []string{"root", "generic"}
-	ctx, cancel := context.WithCancel(context.Background())
+	file, err := snapFileData.Open()
+	defer func(file multipart.File) {
+		err2 := file.Close()
+		if err2 != nil {
+			logrus.Error(err2)
+		}
+	}(file)
+	if err == nil {
+		id, err2 := s.handler.UnscannedUpload(file)
+		if err2 == nil && id != "" {
+			c.JSON(http.StatusOK, &responses.Unscanned{UploadId: id})
+		}
+	}
+}
 
-	defer cancel()
+func (s *Store) authRequestIdPOST(c *gin.Context) {
+	resp := s.handler.AuthRequest()
+	c.JSON(http.StatusOK, resp)
+}
 
-	for _, bucket := range buckets {
-		objectCh := minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
-			Recursive: true,
-		})
-		for object := range objectCh {
-			if strings.Contains(object.Key, "pem") {
-				objectPtr, err := minioClient.GetObject(ctx, bucket, object.Key, minio.GetObjectOptions{})
-				bytes, _ := ioutil.ReadAll(objectPtr)
+func (s *Store) authDevicePOST(c *gin.Context) {
+	request := c.Request
+	dec := asserts.NewDecoder(request.Body)
+	for {
+		got, err := dec.Decode()
+		if err == io.EOF {
+			break
+		}
+		if err != nil { // assume broken i/o
+			panic(err)
+		}
+		if got.Type() == asserts.SerialRequestType {
+			serialRequest := got.(*asserts.SerialRequest)
 
-				rsaPK, err := crypto.ParseRSAPrivateKeyFromPEM(bytes)
-				if err != nil {
-					panic(err)
+			serialAssertion, err2 := s.handler.AuthDevice(serialRequest, asserts.RSAPrivateKey(s.genericPrivateKey), s.signingDB)
+			if err2 == nil && serialAssertion != nil {
+				encodedSerialAssertion := asserts.Encode(serialAssertion)
+				logrus.Trace("Sending serial assertion: ")
+
+				c.Writer.Header().Set("Content-Type", asserts.MediaType)
+				c.Writer.WriteHeader(200)
+				_, err3 := c.Writer.Write(encodedSerialAssertion)
+				if err3 == nil {
+					return
 				}
 
-				assertPK := asserts.RSAPrivateKey(rsaPK)
-
-				err = db.ImportKey(assertPK)
+				logrus.Error(err3)
 			}
+		} else {
+			logrus.Warningf("Assertion type included but not exepected: %s", got.Type().Name)
 		}
 	}
 
-	return db
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+func (s *Store) authNonce(c *gin.Context) {
+	// TODO: do we need to store this?
+	nonce := s.handler.AuthNonce()
+	c.JSON(http.StatusOK, &nonce)
+}
+
+func (s *Store) authSession(c *gin.Context) {
+	// TODO: implement actual sessions?
+	session := s.handler.AuthSession()
+	c.JSON(http.StatusOK, session)
 }

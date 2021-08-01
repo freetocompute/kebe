@@ -2,14 +2,16 @@ package objectstore
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log"
+	"path"
+
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"io/ioutil"
-	"log"
-	"path"
 )
 
 type ObjectStore interface {
@@ -34,9 +36,32 @@ func (obs *Impl) GetFileFromBucket(bucket string, filePath string) (*[]byte, err
 	if err != nil {
 		return nil, err
 	}
-
-	bytes, err := ioutil.ReadAll(objectPtr)
+	bytes, _ := io.ReadAll(objectPtr)
 	return &bytes, err
+}
+
+func (obs *Impl) Move(sourceBucket, destinationBucket, objectName string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sourceBucketExists, err := obs.MinioClient.BucketExists(ctx, sourceBucket)
+	if err != nil {
+		return err
+	}
+	destinationBucketExists, err := obs.MinioClient.BucketExists(ctx, destinationBucket)
+	if err != nil {
+		return err
+	}
+
+	if sourceBucketExists && destinationBucketExists {
+		_, err := obs.MinioClient.CopyObject(ctx, minio.CopyDestOptions{Bucket: destinationBucket, Object: objectName}, minio.CopySrcOptions{Bucket: sourceBucket, Object: objectName})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	return errors.New("something went wrong")
 }
 
 func (obs *Impl) SaveFileToBucket(bucket string, filePath string) error {
@@ -57,7 +82,7 @@ func (obs *Impl) SaveFileToBucket(bucket string, filePath string) error {
 		return err
 	}
 
-	logrus.Infof("%+v", uploadInfo)
+	logrus.Infof("Saved to bucket: %+v", uploadInfo)
 
 	return nil
 }

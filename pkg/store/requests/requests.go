@@ -1,13 +1,10 @@
 package requests
 
 import (
-	"github.com/snapcore/snapd/snap"
 	"time"
-)
 
-type RequestIDResp struct {
-	RequestID string `json:"request-id"`
-}
+	"github.com/snapcore/snapd/snap"
+)
 
 type SnapActionRequest struct {
 	Context             []*CurrentSnapV2JSON `json:"context"`
@@ -54,4 +51,31 @@ type AssertAtJSON struct {
 	Type        string   `json:"type"`
 	PrimaryKey  []string `json:"primary-key"`
 	IfNewerThan *int     `json:"if-newer-than,omitempty"`
+}
+
+type SnapPush struct {
+	Name           string
+	DryRun         bool   `json:"dry_run"`
+	UpDownId       string `json:"updown_id"`
+	Series         string
+	BinaryFileSize int64    `json:"binary_filesize"`
+	SourceUploaded bool     `json:"source_uploaded"`
+	DeltaFormat    string   `json:"delta_format"`
+	DeltaHash      string   `json:"delta_hash"`
+	SourceHash     string   `json:"source_hash"`
+	TargetHash     string   `json:"target_hash"`
+	Channels       []string `json:"channels"`
+}
+
+type SnapRelease struct {
+	Name     string
+	Revision string
+	Channels []string
+}
+
+type Session struct {
+	// asserts.DeviceSessionRequest
+	DeviceSessionRequest string `json:"device-session-request"`
+	ModelAssertion       string `json:"model-assertion"`
+	SerialAssertion      string `json:"serial-assertion"`
 }

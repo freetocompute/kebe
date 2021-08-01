@@ -35,3 +35,16 @@ task build-push-redeploy
 * Kubernetes w/Minio and Postgres [see kebe-helm](https://github.com/freetocompute/kebe-helm)
 * Helm
 
+
+## Struct Generation From Schemas
+
+Uses https://github.com/a-h/generate
+
+```shell
+go get -u github.com/a-h/generate/...
+```
+
+Currently requires manual fix-up after generation due to tool bugs.
+
+Based on the [PR here](https://github.com/snapcore/snapcraft/pull/3004) some required fields in the schema were removed
+to only require what Snapcraft currently cares about.

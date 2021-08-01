@@ -1,0 +1,27 @@
+version: '3'
+
+dotenv: [ '../.env' ]
+
+tasks:
+  force-version:
+    desc: Forces the given version specified
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . force {{.CLI_ARGS}}
+  up:
+    desc: Run all the migrations on the database, bring it to the most current migration
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . up 
+ 
+  add-migration:
+    desc: Add a migration with the name provided
+    cmds:
+      - go-migrate -database ${DATABASE_URL} create -ext sql -dir . {{.CLI_ARGS}}
+
+  step-up-one:
+    desc: Steps up through migrations one at a time
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . up 1
+  step-down-one:
+    desc: Steps down through migrations one at a time
+    cmds:
+      - go-migrate -database ${DATABASE_URL} -path . down 1

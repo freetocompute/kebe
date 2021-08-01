@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"github.com/freetocompute/kebe/config/configkey"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -17,9 +18,11 @@ var DefaultValues = map[string]interface{}{
 	configkey.CanonicalSnapStoreURL: "https://api.snapcraft.io",
 	configkey.DebugMode:             true,
 	configkey.LogLevel:              "trace",
+	configkey.RequestLogger:         false,
 	configkey.MinioHost:             "localhost",
 	configkey.MinioSecretKey:        "password",
 	configkey.MinioAccessKey:        "user",
+	configkey.MinioSecure:           false,
 	configkey.DatabaseUsername:      "manager",
 	configkey.DatabaseDatabase:      "store",
 	configkey.DatabaseHost:          "localhost",
@@ -27,8 +30,8 @@ var DefaultValues = map[string]interface{}{
 	configkey.DatabaseSSLMode:       "disable",
 	configkey.DatabaseTimezone:      "America/New_York",
 	configkey.DatabasePassword:      "password",
-	configkey.LoginPort: 8890,
-	configkey.DashboardPort: 8891,
+	configkey.LoginPort:             8890,
+	configkey.DashboardPort:         8891,
 }
 
 func LoadConfig() {
@@ -37,12 +40,18 @@ func LoadConfig() {
 	if !configLoaded {
 		configLoaded = true
 
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-		viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
+		explicitConfigFile := os.Getenv("CONFIG_FILE")
+		if explicitConfigFile != "" {
+			fmt.Printf("CONFIG_FILE: %s\n", explicitConfigFile)
+			viper.SetConfigFile(explicitConfigFile)
+		} else {
+			viper.SetConfigName("config")
+			viper.SetConfigType("yaml")
+			viper.AddConfigPath("/opt/kebe-store") // path to look for the config file in
 
-		otherPath := os.Getenv("CONFIG_FILE_PATH")
-		viper.AddConfigPath(otherPath)
+			otherPath := os.Getenv("CONFIG_FILE_PATH")
+			viper.AddConfigPath(otherPath)
+		}
 
 		// set defaults first
 		for key, val := range DefaultValues {
@@ -60,11 +69,19 @@ func LoadConfig() {
 	}
 }
 
-func MustGetString(key string) string{
+func MustGetString(key string) string {
 	val := viper.GetString(key)
 	if len(val) == 0 {
 		panic(errors.New("failed to get " + key))
 	}
 
 	return val
+}
+
+func MustGetInt32(key string) int32 {
+	if viper.IsSet(key) {
+		val := viper.GetInt32(key)
+		return val
+	}
+	panic("key not found: " + key)
 }

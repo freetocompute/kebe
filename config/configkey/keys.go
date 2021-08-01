@@ -4,9 +4,11 @@ const (
 	CanonicalSnapStoreURL = "canonical.snap.store.url"
 	LogLevel              = "log.level"
 	DebugMode             = "debug"
+	RequestLogger         = "log.requests.enabled"
 	MinioAccessKey        = "minio.access.key"
 	MinioSecretKey        = "minio.secret.key"
 	MinioHost             = "minio.host"
+	MinioSecure           = "minio.secure"
 
 	DatabaseUsername = "database.username"
 	DatabaseDatabase = "database.database"
@@ -16,21 +18,30 @@ const (
 	DatabaseTimezone = "database.timezone"
 	DatabasePassword = "database.password"
 
+	DashboardURL = "dashboard.url"
+	StoreURL     = "store.url"
+	LoginURL     = "login.url"
+
 	DashboardPort = "dashboard.port"
 	LoginPort     = "login.port"
+	AdminDPort    = "admind.port"
+	AdminDURL     = "admind.url"
 
-	StoreAPIURL = "store.api.url"
+	StoreAPIURL                   = "store.api.url"
+	StoreInitializationConfigPath = "store.initialization.config.path"
 
-	OIDCClientId = "oidc.client.id"
+	OIDCClientId     = "oidc.client.id"
 	OIDCClientSecret = "oidc.client.secret"
-	OIDCProviderURL = "oidc.provider.url"
+	OIDCProviderURL  = "oidc.provider.url"
 
-	MacaroonDischargeKey = "macaroon.discharge.key"
-	MacaroonRootKey = "macaroon.root.key"
-	MacaroonRootId = "macaroon.root.id"
-	MacaroonRootLocation = "macaroon.root.location"
+	MacaroonDischargeKey       = "macaroon.discharge.key"
+	MacaroonRootKey            = "macaroon.root.key"
+	MacaroonRootId             = "macaroon.root.id"
+	MacaroonRootLocation       = "macaroon.root.location"
 	MacaroonThirdPartyCaveatId = "macaroon.thirdparty.caveat.id"
 	MacaroonThirdPartyLocation = "macaroon.thirdparty.location"
 
 	RootAuthority = "root.authority"
+
+	AdminCLILoginPort = "admin.login.port"
 )

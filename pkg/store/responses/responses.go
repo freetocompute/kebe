@@ -79,6 +79,7 @@ type CatalogItem struct {
 	Summary string   `json:"summary"`
 	Aliases []Alias  `json:"aliases"`
 	Apps    []string `json:"apps"`
+	Title   string   `json:"title"`
 }
 
 type SnapRelease struct {
@@ -118,7 +119,7 @@ type SnapActionResult struct {
 	Result string `json:"result"`
 	// For snap
 	InstanceKey      string                `json:"instance-key"`
-	SnapID           string                `json:"snap-id,omitempy"`
+	SnapID           string                `json:"snap-id,omitempty"`
 	Name             string                `json:"name,omitempty"`
 	Snap             *StoreSnap            `json:"snap"`
 	EffectiveChannel string                `json:"effective-channel,omitempty"`
@@ -128,4 +129,25 @@ type SnapActionResult struct {
 	Key                 string           `json:"key"`
 	AssertionStreamURLs []string         `json:"assertion-stream-urls"`
 	ErrorList           []ErrorListEntry `json:"error-list"`
+}
+
+type Unscanned struct {
+	UploadId string `json:"upload_id"`
+}
+
+type Upload struct {
+	Success          bool
+	StatusDetailsURL string `json:"status_details_url"`
+}
+
+type Nonce struct {
+	Nonce string `json:"nonce"`
+}
+
+type Session struct {
+	Macaroon string `json:"macaroon"`
+}
+
+type AuthRequestIDResp struct {
+	RequestID string `json:"request-id"`
 }

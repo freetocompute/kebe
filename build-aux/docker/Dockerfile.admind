@@ -1,0 +1,12 @@
+FROM golang:1.16 AS builder
+
+COPY . /source
+WORKDIR /source
+RUN go build -o /bin/kebe-admind bin/admind/admin-backend.go
+
+FROM golang:1.16
+WORKDIR /bin
+COPY --from=builder /bin/kebe-admind .
+EXPOSE 10000
+
+CMD ["/bin/kebe-admind"]
